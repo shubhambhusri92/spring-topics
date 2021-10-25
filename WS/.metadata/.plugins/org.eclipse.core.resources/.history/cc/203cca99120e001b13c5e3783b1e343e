@@ -1,0 +1,3311 @@
+package com.ericsson.smartmetering.service.impl;
+
+import java.io.File;
+import java.io.IOException;
+import java.sql.Timestamp;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import javax.transaction.Transactional;
+import javax.validation.Valid;
+
+import org.apache.commons.math3.util.Precision;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+
+import com.ericsson.smartmetering.commands.Command;
+import com.ericsson.smartmetering.commands.CommandResponse;
+import com.ericsson.smartmetering.commands.executor.CommandExecutorService;
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.config.ValueConstant;
+import com.ericsson.smartmetering.domain.DomainUserDetail;
+import com.ericsson.smartmetering.domain.UsmsBalanceTransferHistory;
+import com.ericsson.smartmetering.domain.UsmsBank;
+import com.ericsson.smartmetering.domain.UsmsBucketContractMapping;
+import com.ericsson.smartmetering.domain.UsmsBucketDetails;
+import com.ericsson.smartmetering.domain.UsmsContract;
+import com.ericsson.smartmetering.domain.UsmsContractDebt;
+import com.ericsson.smartmetering.domain.UsmsKvaAdjustHistory;
+import com.ericsson.smartmetering.domain.UsmsMeter;
+import com.ericsson.smartmetering.domain.UsmsPackageCode;
+import com.ericsson.smartmetering.domain.UsmsPayment;
+import com.ericsson.smartmetering.domain.UsmsPaymentResponsible;
+import com.ericsson.smartmetering.domain.UsmsUser;
+import com.ericsson.smartmetering.domain.enumeration.AuxRequestParam;
+import com.ericsson.smartmetering.domain.enumeration.BucketType;
+import com.ericsson.smartmetering.domain.enumeration.CommandMainTask;
+import com.ericsson.smartmetering.domain.enumeration.CommandSubTask;
+import com.ericsson.smartmetering.domain.enumeration.ContractStatus;
+import com.ericsson.smartmetering.domain.enumeration.DebtClearanceModel;
+import com.ericsson.smartmetering.domain.enumeration.ErrorMessage;
+import com.ericsson.smartmetering.domain.enumeration.LanguageEnum;
+import com.ericsson.smartmetering.domain.enumeration.MainTaskUseCase;
+import com.ericsson.smartmetering.domain.enumeration.MeterStatus;
+import com.ericsson.smartmetering.domain.enumeration.MeterType;
+import com.ericsson.smartmetering.domain.enumeration.OriginHostNameEnum;
+import com.ericsson.smartmetering.domain.enumeration.PaymentMode;
+import com.ericsson.smartmetering.domain.enumeration.PaymentType;
+import com.ericsson.smartmetering.domain.enumeration.RequestSource;
+import com.ericsson.smartmetering.model.ReferenceBucketModel;
+import com.ericsson.smartmetering.model.UsmsBucketDetailModel;
+import com.ericsson.smartmetering.mysql.domain.HistoryTopupDetailView;
+import com.ericsson.smartmetering.mysql.domain.HistoryTopupSummaryView;
+import com.ericsson.smartmetering.repository.UsmsBankRepository;
+import com.ericsson.smartmetering.repository.UsmsBucketContractMappingRepository;
+import com.ericsson.smartmetering.repository.UsmsContractDebtRepository;
+import com.ericsson.smartmetering.repository.UsmsContractRepository;
+import com.ericsson.smartmetering.repository.UsmsMeterRepository;
+import com.ericsson.smartmetering.repository.UsmsPaymentRepository;
+import com.ericsson.smartmetering.repository.UsmsUserRepository;
+import com.ericsson.smartmetering.request.DedicatedAccountUpdateInformation;
+import com.ericsson.smartmetering.request.SmartMeterRequest;
+import com.ericsson.smartmetering.request.UsageCounterUpdateInformation;
+import com.ericsson.smartmetering.request.impl.CuculusRequestImpl;
+import com.ericsson.smartmetering.request.impl.SmartMeterRequestImpl;
+import com.ericsson.smartmetering.security.SecurityUtils;
+import com.ericsson.smartmetering.service.MailService;
+import com.ericsson.smartmetering.service.NotificationDeliverService;
+import com.ericsson.smartmetering.service.UsmsBalanceTransferHistoryService;
+import com.ericsson.smartmetering.service.UsmsBankService;
+import com.ericsson.smartmetering.service.UsmsCustomerService;
+import com.ericsson.smartmetering.service.UsmsMeterService;
+import com.ericsson.smartmetering.service.UsmsMysqlService;
+import com.ericsson.smartmetering.service.UsmsPaymentService;
+import com.ericsson.smartmetering.service.UsmsRefundHistoryService;
+import com.ericsson.smartmetering.service.dto.AccountDetailsDTO;
+import com.ericsson.smartmetering.service.dto.AdjustmentDetailDTO;
+import com.ericsson.smartmetering.service.dto.BucketHistoryDTO;
+import com.ericsson.smartmetering.service.dto.PaymentDetailDTO;
+import com.ericsson.smartmetering.service.dto.SelfCareAdjustmentDetail;
+import com.ericsson.smartmetering.service.dto.SelfcareTopupCustomerDetail;
+import com.ericsson.smartmetering.service.dto.SelfcareTopupDTO;
+import com.ericsson.smartmetering.service.dto.UsmsBalanceTransferHistoryDTO;
+import com.ericsson.smartmetering.service.dto.UsmsRefundHistoryDTO;
+import com.ericsson.smartmetering.service.util.CacheUtil;
+import com.ericsson.smartmetering.service.util.CommandUtil;
+import com.ericsson.smartmetering.service.util.DateTimeUtil;
+import com.ericsson.smartmetering.service.util.MessageSourceUtil;
+import com.ericsson.smartmetering.service.util.NumberUtil;
+import com.ericsson.smartmetering.service.util.RequestUtil;
+import com.ericsson.smartmetering.web.rest.errors.SelfCareRequestProcessException;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringRuntimeException;
+import com.ericsson.smartmetering.web.rest.util.ExcelUtil;
+import com.ericsson.smartmetering.web.rest.vm.AdjustmentHistoryDetail;
+import com.ericsson.smartmetering.web.rest.vm.BalanceTransferVM;
+import com.ericsson.smartmetering.web.rest.vm.BucketArrayResponse;
+import com.ericsson.smartmetering.web.rest.vm.BucketData;
+import com.ericsson.smartmetering.web.rest.vm.DebtDetailVM;
+import com.ericsson.smartmetering.web.rest.vm.DebtHistoryDetail;
+import com.ericsson.smartmetering.web.rest.vm.PaymentModel;
+import com.ericsson.smartmetering.web.rest.vm.SelfCareMeterDataResponse;
+import com.ericsson.smartmetering.web.rest.vm.UsageCounterData;
+
+@Service
+@Transactional
+public class UsmsPaymentServiceImpl implements UsmsPaymentService {
+
+	public static final String ADJUSTMENT_TYPE = "adjustmentType";
+
+	public static final String ADJUSTMENT_AMOUNT = "adjustmentAmount";
+
+	public static final String TRANSACTION_TYPE = "transactionType";
+
+	public static final String LANGUAGE_PREFERENCE = "languagePreference";
+
+	public static final String REASON = "reason";
+
+	public static final String LEGACY_UNITS = "legacyUnits";
+
+	public static final String OLD_LEGACY_UNITS = "oldLegacyUnits";
+
+	private final Logger log = LoggerFactory.getLogger(UsmsPaymentServiceImpl.class);
+
+	@Value("${threshold.transfer.balance}")
+	private Float balanceTransferThreshold;
+
+	@Value("${threshold.refund}")
+	private Float refundThreshold;
+
+	@Value("${threshold.debt}")
+	private Float debtThreshold;
+
+	@Value("${threshold.transfer.legacy-unit}")
+	private Float legacyUnitTransferThreshold;
+
+	@Autowired
+	private UsmsMeterRepository meterRepository;
+
+	@Autowired
+	private UsmsContractRepository usmsContractRepository;
+
+	@Autowired
+	private UsmsUserRepository userRepository;
+
+	@Autowired
+	private UsmsBucketContractMappingRepository bucketContractMappingRepository;
+
+	@Autowired
+	private UsmsBalanceTransferHistoryService balanceTransferHistoryService;
+
+	@Autowired
+	private UsmsRefundHistoryService refundHistoryService;
+
+	private final CommandExecutorService executorService;
+
+	@Autowired
+	private UsmsBankRepository usmsBankRepository;
+
+	@Autowired
+	private UsmsContractDebtRepository debtRepository;
+
+	@Autowired
+	private UsmsContractDebtRepository usmsContractDebtRepository;
+
+	private final NotificationDeliverService notificationService;
+
+	private final UsmsBankService usmsBankService;
+
+	@Autowired
+	private UsmsPaymentRepository paymentRepository;
+
+	/** The message source. */
+	private final MessageSourceUtil messageSourceUtil;
+
+	private final MailService mailService;
+
+	private final UsmsMysqlService mysqlService;
+
+	private final UsmsMeterService usmsMeterService;
+
+	@Autowired
+	private UsmsCustomerService customerService;
+
+	public UsmsPaymentServiceImpl(CommandExecutorService executorService,
+			NotificationDeliverService notificationService, MessageSourceUtil messageSourceUtil,
+			MailService mailService, UsmsMysqlService mysqlService, UsmsBankService usmsBankService,
+			UsmsMeterService usmsMeterService) {
+		this.executorService = executorService;
+		this.notificationService = notificationService;
+		this.messageSourceUtil = messageSourceUtil;
+		this.mailService = mailService;
+		this.mysqlService = mysqlService;
+		this.usmsBankService = usmsBankService;
+		this.usmsMeterService = usmsMeterService;
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public <T> T topup(AccountDetailsDTO accountDetail, PaymentDetailDTO paymentDetail, String originHostName,
+			PaymentType paymentType, Class<T> type, String subscriberType, SelfcareTopupCustomerDetail custObj)
+			throws SmartMeteringException {
+		log.debug("Topup request, account: {}, payment: {}, type: {}", accountDetail, paymentDetail, type);
+
+		UsmsMeter meter = getMeterByMeterNumber(accountDetail);
+
+		boolean topupAllowed = MeterStatus.ACTIVE.equals(meter.getStatus())
+				|| MeterStatus.SUSPEND.equals(meter.getStatus());
+		if (!topupAllowed)
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "valid meter info");
+
+		SmartMeterRequest request = executeTopup(meter.getMsisdn(), meter.getMeterType(),
+				paymentDetail.getPaymentMode(), paymentDetail.getAmount(), originHostName, subscriberType);
+		log.debug("Is topup successfull from AIR: {}", request.isRequestExecutedSuccessfully());
+
+		if (request.isRequestExecutedSuccessfully()) {
+
+			SelfCareMeterDataResponse response = getMeterInfoFromGBAD(request, meter, new HashMap<Integer, Float>());
+
+			response.setMeterId(meter.getMeterNumber());
+			response.setMeterStatus(meter.getStatus().name());
+
+			Map<String, Object> data = payment(accountDetail, paymentDetail, response, meter, paymentType,
+					originHostName, custObj);
+
+			boolean isSpecialCustomer = response.getCustomerType().toUpperCase()
+					.contains(USMSConstants.CUSTOMER_TYPE_NORMAL) ? false : true;
+			sendReadingsToDLMSSystem(meter, data, isSpecialCustomer);
+
+			File file = sendNotificationOnTopup(paymentDetail, meter, response, data, paymentType);
+
+			if (type.isInstance(response))
+				return (T) response;
+
+			return (T) file; // crm topup
+		} else {
+
+			throw new SmartMeteringException(ErrorMessage.COMMAND_EXECUTION_FAILED, "REFILL ");
+		}
+	}
+
+	/**
+	 * This method would send SMS and Email notification on Topup functionality.
+	 * 
+	 * @return
+	 */
+	private File sendNotificationOnTopup(PaymentDetailDTO paymentDetail, UsmsMeter meter,
+			SelfCareMeterDataResponse response, Map<String, Object> data, PaymentType paymentType) {
+
+		File file = null;
+
+		if (!PaymentType.BALANCE_TRANSFER.equals(paymentType)) {
+
+			setValuesInDataMap(meter, data);
+
+			sendMessageOnTopup(paymentDetail, meter, response, data);
+			file = emailTopup(data, meter.getMeterNumber());
+		}
+
+		return file;
+	}
+
+	/**
+	 * This method would call API to send meter details to the DLMS system.
+	 */
+
+	private void sendReadingsToDLMSSystem(UsmsMeter meter, Map<String, Object> data,
+			boolean isSpecialCustomer) {
+
+		if (MeterType.ELECTRICITY.equals(meter.getMeterType()) && !isSpecialCustomer) {
+
+			String unitsAfter = (String) data.get("unitsAfter");
+			// Float balanceAfter = (Float) data.get("balanceAfter");
+			int unitsInt = unitsAfter == null ? 0 : (int) (Float.valueOf(unitsAfter).floatValue() * 100);
+
+			usmsMeterService.postMeterReadings(meter, unitsInt);
+		}
+	}
+
+	/**
+	 * This method would set param values in data map from Contract and payment
+	 * responsible object.
+	 */
+	private void setValuesInDataMap(UsmsMeter meter, Map<String, Object> data) {
+		UsmsContract activeContract = meter.getUsmsContracts().stream()
+				.filter(cont -> cont.getStatus() != ContractStatus.INACTIVE).findFirst().get();
+
+		UsmsPaymentResponsible pr = activeContract.getPaymentResponsible();
+		String customerType = activeContract.getUsmsPackage().getCustomerType().toUpperCase();
+		String email = pr.getEmail();
+
+		log.debug("email of Payment Responsible: {}", email);
+		data.put("to", email);
+		data.put("prName", pr.getName());
+		data.put("smsNo", pr.getSmsNo());
+		data.put("customerType", customerType);
+		data.put("kvaUnit", meter.getKvaUnit());
+		data.put("language", pr.getLanguage());
+	}
+
+	/**
+	 * This method would configure message based on topup details and send it to the
+	 * customer.
+	 */
+	private void sendMessageOnTopup(PaymentDetailDTO paymentDetail, UsmsMeter meter, SelfCareMeterDataResponse response,
+			Map<String, Object> data) {
+
+		String message = null;
+		String smsNo = String.valueOf(data.get("smsNo"));
+
+		if (smsNo != null && !"null".equals(smsNo)) {
+			Long phoneNumber = Long.valueOf(smsNo);
+			String amount = String.valueOf(data.get("topupAmount"));
+			String actualRecharge = String.valueOf(data.get("amountCredited"));
+			String customerType = (String) data.get("customerType");
+			LanguageEnum language = (LanguageEnum) data.get("language");
+
+			float topupAmount = amount == null ? 0.0f : Float.valueOf(amount);
+			float actualRechargeVal = actualRecharge == null ? 0.0f : Float.valueOf(actualRecharge);
+			String amountAdjusted = NumberUtil.truncatetoTwoDecimalPlaces(topupAmount - actualRechargeVal);
+			String amountCredited = NumberUtil.truncatetoTwoDecimalPlaces(actualRechargeVal);
+			String currentBalance = NumberUtil.truncatetoTwoDecimalPlaces(response.getCurrentBalance());
+			String topupAmountStr = NumberUtil.truncatetoTwoDecimalPlaces(paymentDetail.getAmount());
+
+			if (USMSConstants.CUSTOMER_TYPE_NORMAL.equals(customerType)) {
+
+				if (actualRechargeVal < topupAmount) {
+					message = messageSourceUtil.getMessage("normal.cust.topup.withdebt", language,
+							new Object[] { topupAmountStr, amountAdjusted, amountCredited, currentBalance,
+									meter.getMeterType(), meter.getMeterNumber() });
+				} else {
+					message = messageSourceUtil.getMessage("normal.cust.topup.withoutdebt", language,
+							new Object[] { topupAmountStr, meter.getMeterType(), meter.getMeterNumber() });
+				}
+			} else {
+
+				message = messageSourceUtil.getMessage("special.cust.topup", language,
+						new Object[] { topupAmountStr, currentBalance, meter.getMeterType(), meter.getMeterNumber() });
+			}
+
+			notificationService.sendMessageToCIS(RequestUtil.getTransactionId(), RequestUtil.getTransactionTime(),
+					message, phoneNumber.toString());
+		}
+
+	}
+
+	/**
+	 * @param accountDetail
+	 */
+	private UsmsMeter getMeterByMeterNumber(AccountDetailsDTO accountDetail) throws SmartMeteringException {
+
+		List<UsmsMeter> meterList = meterRepository.findByMeterNumber(accountDetail.getMeterNumber());
+		log.debug("meter: {} found against meter number: {}", meterList, accountDetail.getMeterNumber());
+		if (CollectionUtils.isEmpty(meterList))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Meter");
+
+		Optional<UsmsMeter> meterOpt = meterList.stream().filter(
+				mtr -> MeterStatus.ACTIVE.equals(mtr.getStatus()) || MeterStatus.SUSPEND.equals(mtr.getStatus()))
+				.findFirst();
+
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE,
+					"for msisdn " + accountDetail.getMeterNumber() + " ");
+
+		UsmsMeter meter = meterOpt.get();
+		return meter;
+	}
+
+	private File emailTopup(Map<String, Object> data, String meterNumber) {
+		File file = null;
+		try {
+			String fileName = "TOPUP-" + MDC.get(USMSConstants.TRANSACTION_ID);
+			file = mailService.createPdf(data, USMSConstants.TOPUP_TEMPLATE_NAME, meterNumber, fileName);
+			String to = (String) data.get("to");
+			HashMap<String, Object> map = new HashMap<>();
+			map.put("name", data.get("prName"));
+			String body = mailService.build(map, USMSConstants.TOPUP_TEMPLATE_MAIL);
+			if (StringUtils.hasText(to))
+				mailService.sendEmail(to, "USMS Top Up e-Receipt_" + data.get("receiptNumber"), body, file);
+		} catch (Exception e) {
+			log.error("error while creating file");
+		}
+		return file;
+	}
+
+	@Override
+	public Map<String, Object> payment(AccountDetailsDTO accountDetail, PaymentDetailDTO paymentDetail,
+			SelfCareMeterDataResponse response, UsmsMeter meter, PaymentType paymentType, String originHostName,
+			SelfcareTopupCustomerDetail custObj) {
+
+		UsmsPayment payment = getPayment(accountDetail, paymentDetail, meter, response, paymentType, originHostName);
+
+		saveCustomerDetailsOnTopup(custObj, payment);
+
+		log.debug("usms payment from response : {}", payment);
+		boolean isSpecialCustomer = !response.getCustomerType().toUpperCase()
+				.contains(USMSConstants.CUSTOMER_TYPE_NORMAL);
+
+		if (!isSpecialCustomer
+				&& !(PaymentType.DEBT.equals(paymentType) || PaymentType.DEBT_TRANSFER.equals(paymentType))) {
+
+			UsmsBucketDetails buckets = getBuckets(response.getBucketArray());
+
+			if (MeterType.WATER.name().equals(response.getMeterType())) {
+				setWaterAttrsInBucketObj(buckets, response.getBucketArray().getMainAccountValue(), null,
+						response.getMainAccountCF(), null, response.getMeterType());
+			}
+			log.debug("usms bucket details from response : {}", buckets);
+
+			UsmsBucketContractMapping mapping = new UsmsBucketContractMapping();
+			mapping.setOperation(PaymentType.TOPUP.name());
+			mapping.setUsmsBucketDetails(buckets);
+			mapping.setUsmsPayment(payment);
+			bucketContractMappingRepository.save(mapping);
+		} else {
+
+			paymentRepository.save(payment);
+		}
+
+		String initial = null;
+		if (paymentType == PaymentType.TOPUP) {
+			initial = "TO-";
+		} else if (paymentType == PaymentType.BALANCE_TRANSFER) {
+			initial = "BT-";
+		} else {
+			initial = "DB-";
+		}
+		Map<String, Object> data = mailService.getTopupDetails(initial, payment, accountDetail, paymentDetail,
+				paymentType, isSpecialCustomer, accountDetail.getKvaUnit(), response);
+		data.put("amountCredited", payment.getActualRechageAmount());
+		if (Objects.nonNull(payment.getDebt())) {
+			data.put("debtAdjusted", payment.getDebt().getDebtAdjusted());
+			data.put("initialLoanCleared", payment.getDebt().getInitialLoanCleared());
+		}
+		data.put("unitsCredited", NumberUtil.differenceOfFloats(payment.getAfterUnit(), payment.getCurrentUnit(),
+				ValueConstant.THREE));
+		data.put("unitsAfter",
+				response.getCurrentUnits() != null ? NumberUtil.truncatetoThreeDecimalPlaces(response.getCurrentUnits())
+						: null);
+		data.put("balanceAfter",
+				response.getCurrentBalance() != null
+						? NumberUtil.truncatetoTwoDecimalPlaces(response.getCurrentBalance())
+						: null);
+
+		data.put("contractId", payment.getDebt() == null ? null : payment.getDebt().getId());
+//		UsmsContractDebt usmsContractDebt = payment.getUsmsContract()
+//				.getUsmsContractDebts()
+//				.stream()
+//				.max(Comparator.comparing(UsmsContractDebt::getId))
+//				.orElse(null);
+//
+//		data.put("contractId", );
+
+		return data;
+	}
+
+	/**
+	 * This method would save the merchant and customer information on topup.
+	 * 
+	 * @param custObj
+	 * @param payment
+	 */
+	private void saveCustomerDetailsOnTopup(SelfcareTopupCustomerDetail custObj, UsmsPayment payment) {
+		if (custObj != null) {
+
+			log.debug("Save the merchant and customer information on topup - {}", custObj);
+			if (StringUtils.hasText(custObj.getMerchantName())) {
+				payment.setMerchantName(custObj.getMerchantName());
+			}
+			if (StringUtils.hasText(custObj.getMerchantReferenceNum())) {
+				payment.setMerchantReferenceNum(custObj.getMerchantReferenceNum());
+			}
+			if (StringUtils.hasText(custObj.getMobileNumber())) {
+				payment.setMobileNumber(custObj.getMobileNumber());
+			}
+			if (StringUtils.hasText(custObj.getEmailId())) {
+				payment.setEmailId(custObj.getEmailId());
+			}
+		}
+	}
+
+	private UsmsPayment getPayment(AccountDetailsDTO accountDetail, PaymentDetailDTO paymentDetail, UsmsMeter meter,
+			SelfCareMeterDataResponse response, PaymentType paymentType, String originHostName) {
+
+		UsmsPayment payment = new UsmsPayment();
+		payment.setUsmsMeter(meter);
+
+		addBankDetails(paymentDetail, payment);
+		payment.setModeTransactionNumber(paymentDetail.getModeNumber()); // card Number, voucher Number, JV ID number
+		payment.setModeTransactionDate(paymentDetail.getTransactionDateTime());
+
+		// card transactionId or bank transaction number or Acknowledgement or Transfer
+		// Reference No
+		payment.setTransactionId(paymentDetail.getTransactionId());
+
+		payment.setFinTransNo(MDC.get(USMSConstants.TRANSACTION_ID));
+		payment.setUsmsCustomer(meter.getUsmsCustomer());
+		payment.setAmount(paymentDetail.getAmount());
+		payment.setMeterType(meter.getMeterType());
+		payment.setPaymentCurrency(ValueConstant.BRUNEI_CURRENCY);
+		payment.setPaymentType(paymentType);
+		payment.setOriginHostName(originHostName);
+		payment.setPaymentMode(paymentDetail.getPaymentMode());
+
+		payment.setCurrentBalance(accountDetail.getCurrentBalance());
+		payment.setAfterBalance(response.getCurrentBalance());
+		payment.setCurrentUnit(accountDetail.getCurrentUnits());
+		payment.setAfterUnit(response.getCurrentUnits());
+		payment.setMinimumRechargeValue(accountDetail.getMinimumRechargeValue());
+
+		Float initialLoan = accountDetail.getInitialLoan() != null ? accountDetail.getInitialLoan() : 0.0f;
+		Float remInitialLoan = response.getInitialLoan() != null ? response.getInitialLoan() : 0.0f;
+		Float clearedInitialLoan = initialLoan - remInitialLoan;
+
+		payment.setMerchantName(paymentDetail.getMerchant());
+		payment.setDeptRefNo(paymentDetail.getDeptRefNo());
+		payment.setGovtAccountNumber(paymentDetail.getGovtAccountNumber());
+
+		Float debtAdjusted = setActualRechargeAndGetDebtAdjusted(accountDetail, paymentDetail, paymentType, payment,
+				response);
+
+		if (USMSConstants.OTHER.equalsIgnoreCase(paymentDetail.getReason()))
+			payment.setReasonCode(paymentDetail.getOtherReason());
+		else
+			payment.setReasonCode(paymentDetail.getReason());
+
+		addDebtDetailsOnPayment(accountDetail, meter, response, paymentType, payment, debtAdjusted, clearedInitialLoan);
+		setUserMappingInPayment(payment);
+		return payment;
+	}
+
+	private Float setActualRechargeAndGetDebtAdjusted(AccountDetailsDTO accountDetail, PaymentDetailDTO paymentDetail,
+			PaymentType paymentType, UsmsPayment payment, SelfCareMeterDataResponse response) {
+		log.debug("Entered:: UsmsPaymentServiceimpl:: setActualRechargeAndGetDebtAdjusted");
+
+		Float debtAdjusted = null;
+
+		Float prevBalance = accountDetail.getCurrentBalanceFull() != null ? accountDetail.getCurrentBalanceFull()
+				: null;
+		Float newBalance = response.getCurrentBalanceFull() != null ? response.getCurrentBalanceFull() : null;
+		Float oldDebt = accountDetail.getDebtAmount();
+		String newDebt = response.getDebtDetailVM().getOutstandingAmount();
+		Float newDebtAmount = newDebt == null ? 0.0f : Float.valueOf(newDebt);
+
+		if (paymentType == PaymentType.DEBT) {
+
+			debtAdjusted = payment.getAmount();
+			payment.setActualRechageAmount(debtAdjusted);
+		} else {
+
+			Float amountDiff = NumberUtil.differenceOfFloats(newBalance, prevBalance, ValueConstant.TWO)
+					.floatValue();
+			debtAdjusted = NumberUtil.differenceOfFloats(oldDebt, newDebtAmount, ValueConstant.TWO).floatValue();
+
+			// Check amount is credited on customer account.
+			amountDiff = amountDiff > 0.0f ? amountDiff : 0.0f;
+			debtAdjusted = debtAdjusted > 0.0f ? debtAdjusted : 0.0f;
+
+			payment.setActualRechageAmount(amountDiff);
+
+			log.debug("amountDiff:{}|prevBalance:{}|newBalance:{}", amountDiff, prevBalance, newBalance);
+		}
+
+		log.info("PaymentType:{}|debtAdjusted:{}|actualRecharge:{}", paymentType, debtAdjusted,
+				payment.getActualRechageAmount());
+		return debtAdjusted;
+	}
+
+	/**
+	 * This method would add debt details in payment object.
+	 * 
+	 * @param accountDetail
+	 */
+	private void addDebtDetailsOnPayment(AccountDetailsDTO accountDetail, UsmsMeter meter,
+			SelfCareMeterDataResponse response, PaymentType paymentType, UsmsPayment payment, Float debtAdjusted,
+			Float clearedInitialLoan) {
+
+		Predicate<UsmsContract> isContractActive = cont -> cont.getStatus() == ContractStatus.ACTIVE;
+		Predicate<UsmsContract> isContractSuspend = cont -> cont.getStatus() == ContractStatus.SUSPEND;
+
+		log.debug("Entered:: UsmsPaymentServiceimpl:: addDebtDetailsOnPayment");
+		log.info("Cleared initial loan:- {}", clearedInitialLoan);
+
+		Optional<UsmsContract> cont = meter.getUsmsContracts().stream().filter(isContractActive.or(isContractSuspend))
+				.findAny();
+		UsmsContractDebt debt = null;
+
+		if (cont.isPresent()) {
+			cont.get().getPaymentResponsible().toString(); // eager load
+			payment.setUsmsContract(cont.get());
+			debt = debtRepository.findByContractId(cont.get().getId());
+
+			String newDebtAmount = response.getDebtDetailVM().getOutstandingAmount();
+			log.info("Is debt Model Already defined :- {}", debt);
+
+			if (debt != null) {
+
+				addInitialLoanAndDebtDetails(paymentType, payment, debtAdjusted, clearedInitialLoan, debt,
+						newDebtAmount);
+			} else if (clearedInitialLoan != 0.0f
+					&& (PaymentType.TOPUP.equals(paymentType) || PaymentType.BALANCE_TRANSFER.equals(paymentType))) {
+
+				addInitialLoanDetails(paymentType, payment, clearedInitialLoan, cont.get());
+			} else if (debtAdjusted != null && debtAdjusted > 0.0f) {
+
+				log.error("No debt Model Defined, but debt repaymnet received|OCS:{}|repaymentAmount:{}", newDebtAmount,
+						debtAdjusted);
+			}
+		}
+
+	}
+
+	/**
+	 * This method would add contractDebt Object containing initial loan details in
+	 * Payment Object.
+	 * 
+	 * @param initialLoan
+	 */
+	private void addInitialLoanDetails(PaymentType paymentType, UsmsPayment payment, Float initialLoan,
+			UsmsContract contract) {
+
+		UsmsContractDebt contractDebt = new UsmsContractDebt();
+		contractDebt.setReasonForAdjustment(payment.getReasonCode());
+		contractDebt.setDebtAdjustedType(paymentType.name());
+		contractDebt.setDebtClearingMethod(DebtClearanceModel.NO_MODEL_DEFINED);
+		contractDebt.setDebtAdjusted(0.0f);
+		contractDebt.setInitialLoanCleared(initialLoan);
+		contractDebt.setIsValid(false);
+		contractDebt.setUsmsContract(contract);
+		payment.setDebt(contractDebt);
+
+		log.info("Debt Details on Topup :- {}", contractDebt);
+	}
+
+	/**
+	 * This method would add contractDebt Object containing initial loan and debt
+	 * adjusted details in Payment Object.
+	 */
+	private void addInitialLoanAndDebtDetails(PaymentType paymentType, UsmsPayment payment, Float debtAdjusted,
+			Float initialLoan, UsmsContractDebt debt, String newDebtAmount) {
+
+		UsmsContractDebt contractDebt = new UsmsContractDebt(debt);
+		contractDebt.setReasonForAdjustment(payment.getReasonCode());
+		contractDebt.setDebtAdjustedType(paymentType.name());
+		contractDebt.setOpenDebtAmount(newDebtAmount != null ? Float.valueOf(newDebtAmount) : 0.00f);
+
+		if (debtAdjusted != null && debtAdjusted > 0.0f) {
+
+			debt.setIsValid(Boolean.FALSE);
+			contractDebt.setDebtAdjusted(debtAdjusted * -1);
+			contractDebt.setInitialLoanCleared(initialLoan);
+			payment.setDebt(contractDebt);
+		} else if (initialLoan != 0.0f) {
+
+			debt.setIsValid(Boolean.FALSE);
+			contractDebt.setDebtAdjusted(0.0f);
+			contractDebt.setInitialLoanCleared(initialLoan);
+			payment.setDebt(contractDebt);
+		}
+		log.info("Debt Details on Payment :- {}", contractDebt);
+	}
+
+	/**
+	 * This method would add bank details in {@link UsmsPayment} object.
+	 * 
+	 * @param paymentDetail
+	 * @param payment
+	 */
+	private void addBankDetails(PaymentDetailDTO paymentDetail, UsmsPayment payment) {
+
+		if (StringUtils.isEmpty(paymentDetail.getBankName()) && !StringUtils.isEmpty(paymentDetail.getOtherBank())) {
+			paymentDetail.setBankName(paymentDetail.getOtherBank());
+		}
+
+		payment.setBankTerminal(paymentDetail.getBankTerminal());
+
+		if (StringUtils.isEmpty(paymentDetail.getToBankName())
+				&& !StringUtils.isEmpty(paymentDetail.getToOtherBank())) {
+			paymentDetail.setToBankName(paymentDetail.getToOtherBank());
+		}
+
+		if (!StringUtils.isEmpty(paymentDetail.getBankName())) {
+			Optional<UsmsBank> bank = usmsBankRepository.findByBankNameIgnoreCase(paymentDetail.getBankName());
+
+			if (bank.isPresent()) {
+
+				payment.setUsmsBank(bank.get());
+			} else if (!StringUtils.isEmpty(paymentDetail.getOtherBank())) {
+
+				UsmsBank newBank = new UsmsBank();
+				newBank.setBankCode(paymentDetail.getOtherBank());
+				newBank.setBankName(paymentDetail.getOtherBank());
+				newBank.setIsDeleted(Boolean.FALSE);
+				newBank.setTerminal(Boolean.FALSE);
+				newBank = usmsBankService.save(newBank);
+				payment.setUsmsBank(newBank);
+			}
+		}
+
+		if (!StringUtils.isEmpty(paymentDetail.getToBankName())) {
+			Optional<UsmsBank> bank = usmsBankRepository.findByBankNameIgnoreCase(paymentDetail.getToBankName());
+
+			if (bank.isPresent()) {
+
+				payment.setToUsmsBank(bank.get());
+			} else if (!StringUtils.isEmpty(paymentDetail.getToOtherBank())) {
+
+				UsmsBank newBank = new UsmsBank();
+				newBank.setBankCode(paymentDetail.getToOtherBank());
+				newBank.setBankName(paymentDetail.getToOtherBank());
+				newBank.setIsDeleted(Boolean.FALSE);
+				newBank.setTerminal(Boolean.FALSE);
+				newBank = usmsBankService.save(newBank);
+				payment.setToUsmsBank(newBank);
+			}
+		}
+	}
+
+	/**
+	 * This method would set User and Site Mapping in Payment Object.
+	 * 
+	 * @param payment
+	 */
+	private void setUserMappingInPayment(UsmsPayment payment) {
+		if (SecurityUtils.getCurrentUserLogin().isPresent()) {
+			Optional<UsmsUser> userOpt = SecurityUtils.getCurrentUserLogin().flatMap(userRepository::findOneByUsername);
+			if (userOpt.isPresent()) {
+				payment.setPaymentBy(userOpt.get().getUsername());
+				payment.setUsmsUser(userOpt.get());
+				payment.setUsmsSite(userOpt.get().getSite());
+			}
+		}
+	}
+
+	private UsmsBucketDetails getBuckets(BucketArrayResponse bucketArray) {
+		UsmsBucketDetails bucket = new UsmsBucketDetails();
+		if (bucketArray.getTierBucket() != null)
+			for (BucketData data : bucketArray.getTierBucket())
+				fillData(bucket, data);
+		if (bucketArray.getCarryForwardBucket() != null)
+			for (BucketData data : bucketArray.getCarryForwardBucket())
+				fillData(bucket, data);
+		return bucket;
+	}
+
+	private SelfCareMeterDataResponse getMeterInfoFromGBAD(SmartMeterRequest request, UsmsMeter meter,
+			Map<Integer, Float> maxVal) throws SmartMeteringException {
+
+		CommandSubTask gbadCommand = CommandSubTask.GET_BALANCE_AND_DATE;
+		Command gbad = request.getExecutedCommand(gbadCommand);
+
+		SelfCareMeterDataResponse response = null;
+
+		CommandResponse res = CommandUtil.getCommandSuccessResponse(gbad, gbadCommand.name(),
+				String.valueOf(meter.getMsisdn()));
+
+		Optional<UsmsContract> contOpt = meter.getUsmsContracts().stream()
+				.filter(contract -> ContractStatus.ACTIVE == contract.getStatus()
+						|| ContractStatus.SUSPEND == contract.getStatus())
+				.findAny();
+		if (contOpt.isPresent()) {
+			UsmsContract contract = contOpt.get();
+			Optional<UsmsContractDebt> debtOpt = contract.getUsmsContractDebts().stream()
+					.filter(debt -> debt.getIsValid()).findAny();
+			UsmsContractDebt contractDebt = null;
+
+			if (debtOpt.isPresent())
+				contractDebt = debtOpt.get();
+
+			String customerType = contract.getUsmsPackage().getCustomerType();
+			String applicantType = contract.getUsmsPackage().getUsmsApplicantType().getApplicantTypeCode();
+
+			response = CommandUtil.processGBADResponseForMeterDetails(res, contract.getUsmsPackage().getId(),
+					customerType, contractDebt, "dedicatedAccountInformation", maxVal, meter.getMeterType());
+			response.setCustomerId(contract.getUsmsCustomer().getCustCode());
+			response.setMeterType(meter.getMeterType().name());
+			response.setPackageId(contract.getUsmsPackage().getId());
+			response.setCustomerType(applicantType + USMSConstants.HYPHEN + customerType);
+		}
+		return response;
+	}
+
+	private void fillData(UsmsBucketDetails bucket, BucketData data) {
+		Optional<BucketType> bucketOpt = BucketType.getEnumFromName(data.getBucketType());
+		if (bucketOpt.isPresent()) {
+			BucketType bucketType = bucketOpt.get();
+			String bucketValue = data.getBucketValue();
+			setBucketCurrValueByType(bucket, bucketType, bucketValue);
+		}
+	}
+
+	/**
+	 * This method would set bucket value based on the type passed as parameter.
+	 * 
+	 * @param bucket
+	 * @param bucketType
+	 * @param bucketValue
+	 */
+	private void setBucketCurrValueByType(UsmsBucketDetails bucket, BucketType bucketType, String bucketValue) {
+		switch (bucketType) {
+		case TIER1:
+			bucket.setCurrTier1Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER2:
+			bucket.setCurrTier2Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER3:
+			bucket.setCurrTier3Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER4:
+			bucket.setCurrTier4Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF1:
+			bucket.setCurrCf1Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF2:
+			bucket.setCurrCf2Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF3:
+			bucket.setCurrCf3Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF4:
+			bucket.setCurrCf4Bucket(Float.parseFloat(bucketValue));
+			break;
+		default:
+			break;
+		}
+	}
+
+	/**
+	 * This method would set bucket value based on the type passed as parameter.
+	 * 
+	 * @param bucket
+	 * @param bucketType
+	 * @param bucketValue
+	 */
+	private void setBucketPrevValueByType(UsmsBucketDetails bucket, BucketType bucketType, String bucketValue) {
+		switch (bucketType) {
+		case TIER1:
+			bucket.setPrevTier1Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER2:
+			bucket.setPrevTier2Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER3:
+			bucket.setPrevTier3Bucket(Float.parseFloat(bucketValue));
+			break;
+		case TIER4:
+			bucket.setPrevTier4Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF1:
+			bucket.setPrevCf1Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF2:
+			bucket.setPrevCf2Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF3:
+			bucket.setPrevCf3Bucket(Float.parseFloat(bucketValue));
+			break;
+		case CF4:
+			bucket.setPrevCf4Bucket(Float.parseFloat(bucketValue));
+			break;
+		default:
+			break;
+		}
+	}
+
+	private SmartMeterRequest executeTopup(Long msisdn, MeterType meterType, PaymentMode paymentMode, Float amount,
+			String originHostName, String subscriberType) {
+
+		// Need to modify for selfcare
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, msisdn);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, meterType);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ORIGIN_HOST_NAME, originHostName);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TOPUP_AMOUNT, amount);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.PAYMENT_MODE, paymentMode);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.TOP_UP);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.SUBSCRIBER_TYPE, subscriberType);
+		executorService.execute(CommandMainTask.TOPUP, request);
+		return request;
+	}
+
+	@Override
+	public AccountDetailsDTO getAccountDetails(Long meterId) throws SmartMeteringException {
+		Optional<UsmsMeter> meterOpt = meterRepository.findById(meterId);
+		return getAccountDetailFromMeter(meterOpt);
+	}
+
+	@Override
+	public AccountDetailsDTO getAccountDetailFromMeter(Optional<UsmsMeter> meterOpt) throws SmartMeteringException {
+		log.debug("received meter: {}", meterOpt);
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "meter");
+		AccountDetailsDTO account = null;
+		UsmsMeter meter = meterOpt.get();
+		Map<Integer, Float> maxVal = new HashMap<>();
+		SelfCareMeterDataResponse res = executeGBADAndUCUT(meter, maxVal, false);
+		if (res != null) {
+			account = getAccountDetails(meter, maxVal, res);
+		}
+		return account;
+	}
+
+	/**
+	 * This method would populate {@link AccountDetailsDTO} object with the meter
+	 * and balance related information
+	 * 
+	 * @param meter {@link UsmsMeter} object
+	 * @param res   {@link SelfCareMeterDataResponse} object
+	 * @return populated {@link AccountDetailsDTO} object
+	 */
+	private AccountDetailsDTO getAccountDetails(UsmsMeter meter, Map<Integer, Float> maxVal,
+			SelfCareMeterDataResponse res) {
+
+//		Predicate<UsmsContract> isContractActive = cont -> cont.getStatus() == ContractStatus.ACTIVE;
+//		Predicate<UsmsContract> isContractSuspend = cont -> cont.getStatus() == ContractStatus.SUSPEND;
+		UsmsContract contract = meter.getUsmsContracts().stream().max(Comparator.comparing(UsmsContract::getId)).get();
+//				.filter(isContractActive.or(isContractSuspend))
+//				.findAny().get();
+		UsmsPaymentResponsible responsible = contract.getPaymentResponsible();
+		AccountDetailsDTO account = new AccountDetailsDTO();
+
+		account.setAddress(responsible.getAddress());
+		account.setCurrentBalance(Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(res.getCurrentBalance())));
+		account.setCurrentBalanceFull(res.getCurrentBalanceFull());
+		account.setCurrentUnits(Float.parseFloat(NumberUtil.truncatetoThreeDecimalPlaces(res.getCurrentUnits())));
+		account.setCustomerName(responsible.getName());
+		account.setInitialLoan(Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(res.getInitialLoan())));
+		account.setMeterId(meter.getId());
+		account.setMeterNumber(meter.getMeterNumber());
+		account.setMeterNumberPrefix(meter.getMeterNumberPrefix());
+		account.setMeterPhase(meter.getMeterPhase());
+		account.setKvaUnit(meter.getKvaUnit());
+		account.setMeterStatus(meter.getStatus());
+		account.setMeterType(meter.getMeterType().name());
+		account.setMinimumRechargeValue(
+				Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(res.getMinimumRechargeValue())));
+		account.setPrMobileNo(responsible.getSmsNo());
+		account.setServiceProviderName(meter.getUsmsServiceProvider().getServiceProviderName());
+		account.setMainAccountValue(res.getBucketArray().getMainAccountValue());
+
+		setDebtDetailsInAccountObject(res, account);
+		account.setLegacyUnitTransferThreshold(legacyUnitTransferThreshold)
+				.setBalanceTransferThreshold(balanceTransferThreshold).setRefundThreshold(refundThreshold)
+				.setDebtThreshold(debtThreshold).setLegacyUnits(getLegacyUnits(maxVal, res));
+		return account;
+	}
+
+	/**
+	 * This method would set the debt details of the customer in teh account object.
+	 * 
+	 * @param account
+	 */
+	private void setDebtDetailsInAccountObject(SelfCareMeterDataResponse res, AccountDetailsDTO account) {
+
+		DebtDetailVM debtDetailVM = res.getDebtDetailVM();
+
+		if (debtDetailVM != null) {
+
+			String debtAmountStr = debtDetailVM.getOutstandingAmount();
+			Float debtAmount = null;
+			String debtAmountFull = debtDetailVM.getDebtAmountFull();
+
+			DebtClearanceModel model = debtDetailVM.getDebtClearanceModel() == null ? null
+					: DebtClearanceModel.valueOf(debtDetailVM.getDebtClearanceModel());
+
+			account.setDeductionAmount(debtDetailVM.getDeductionAmount());
+			account.setDebtClearanceMethod(model);
+			account.setRemainingDebtClearingPeriod(debtDetailVM.getRemainingDebtClearingPeriod());
+
+			if (StringUtils.hasText(debtAmountStr)) {
+
+				debtAmount = Float
+						.valueOf(NumberUtil.truncateDecimalPlaces(debtAmountStr, ValueConstant.TWO_DECIMAL_PLACES));
+				account.setDebtAmountFull(
+						debtAmountFull == null ? null : Float.parseFloat(debtDetailVM.getDebtAmountFull()));
+			} else {
+				debtAmount = 0.0f;
+			}
+			account.setDebtAmount(debtAmount);
+
+		}
+	}
+
+	private SelfCareMeterDataResponse executeGBADAndUCUT(UsmsMeter meter, Map<Integer, Float> maxVal,
+			boolean isUsageDataReq) throws SmartMeteringException {
+
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, meter.getMsisdn());
+		executorService.execute(CommandMainTask.GET_BALANCE_AND_DATE, request);
+		SelfCareMeterDataResponse response = getMeterInfoFromGBAD(request, meter, maxVal);
+
+		return addUsageCountersForWaterMeter(meter, request, response, isUsageDataReq);
+	}
+
+	/**
+	 * This method would add usage counters associated with water meter.
+	 * 
+	 * @param meter
+	 * @throws SmartMeteringException
+	 */
+	private SelfCareMeterDataResponse addUsageCountersForWaterMeter(UsmsMeter meter, SmartMeterRequest request,
+			SelfCareMeterDataResponse response, boolean isUsageDataReq) throws SmartMeteringException {
+
+		if (isUsageDataReq && MeterType.WATER.equals(meter.getMeterType())) {
+
+			log.debug("Adding usage counters for water meter");
+
+			long packageId = response.getPackageId();
+			executorService.execute(CommandMainTask.GET_USAGE_THRESHOLDS_AND_COUNTERS, request);
+			CommandSubTask getUCUTCommand = CommandSubTask.GET_USAGE_THRESHOLDS_AND_COUNTERS;
+			Command getUCUT = request.getExecutedCommand(getUCUTCommand);
+			CommandResponse commandResponse = CommandUtil.getCommandSuccessResponse(getUCUT, getUCUTCommand.name(),
+					String.valueOf(meter.getMsisdn()));
+			List<UsageCounterData> usageCounters = getUsageCounters(packageId, commandResponse);
+
+			response.setUsageCounters(usageCounters);
+		}
+		return response;
+	}
+
+	/**
+	 * This method would return usageCounter list exists for passed packageId.
+	 * 
+	 * @param packageId
+	 * @param commandResponse
+	 * @return
+	 */
+	@SuppressWarnings("unchecked")
+	private List<UsageCounterData> getUsageCounters(long packageId, CommandResponse commandResponse) {
+		List<UsageCounterData> usageCounters = null;
+
+		if (commandResponse != null) {
+
+			HashMap<Object, Object> responseMap = (HashMap<Object, Object>) commandResponse.getResponse();
+			Object[] counterUsageArr = (Object[]) responseMap.get("usageCounterUsageThresholdInformation");
+
+			Map<Integer, String> tierUCMap = CacheUtil.getUCIdWithTierTypeMap(packageId);
+			if (counterUsageArr != null && counterUsageArr.length > 0 && !CollectionUtils.isEmpty(tierUCMap)) {
+
+				usageCounters = new ArrayList<>(counterUsageArr.length);
+				for (Object counterUsage : counterUsageArr) {
+
+					Map<Object, Object> counterUsageValue = (HashMap<Object, Object>) counterUsage;
+					Integer ucId = Integer.parseInt(String.valueOf(counterUsageValue.get("usageCounterID")));
+					String ucValue = (String) counterUsageValue.get("usageCounterMonetaryValue1");
+					String tierType = tierUCMap.get(ucId);
+
+					if (tierType != null && BucketType.valueOf(tierType.toUpperCase()) != null) {
+
+						BucketType bucket = BucketType.valueOf(tierType.toUpperCase());
+						UsageCounterData counterObj = new UsageCounterData();
+						counterObj.setBucketType(bucket);
+						counterObj.setCounterId(ucId);
+						counterObj.setPrevCounterValue(RequestUtil.fromAIR(Double.valueOf(ucValue)).toString());
+						counterObj.setCounterValue("0");
+						usageCounters.add(counterObj);
+						log.info("Added Counter :: {}", counterObj);
+					}
+				}
+
+				log.debug("No of counters linked with water meter :- {}", usageCounters.size());
+			}
+		}
+		return usageCounters;
+	}
+
+	/**
+	 * This method would return {@link PaymentModel} object populated with
+	 * {@link AdjustmentDetailDTO} and {@link PaymentDetailDTO} details.
+	 */
+	public PaymentModel getMeterAndBucketDetails(Long meterId) throws SmartMeteringException {
+		log.debug("Entered :: UsmsPaymentServiceImpl :: getMeterAndBucketDetails");
+
+		Optional<UsmsMeter> meterOpt = meterRepository.findById(meterId);
+		PaymentModel adjustmentModel = new PaymentModel();
+		AccountDetailsDTO accountDetails = null;
+		AdjustmentDetailDTO adjustmentDTO = null;
+		if (meterOpt.isPresent()) {
+
+			UsmsMeter meter = meterOpt.get();
+			log.debug(" Meter fetched from the database - meterId : {}; msisdn : {}", meterId, meter.getMsisdn());
+			Map<Integer, Float> maxVal = new HashMap<>();
+			SelfCareMeterDataResponse res = executeGBADAndUCUT(meter, maxVal, true);
+			if (res != null) {
+
+				accountDetails = getAccountDetails(meter, maxVal, res);
+				adjustmentDTO = new AdjustmentDetailDTO();
+
+				// For Water Scenarios
+				CommandUtil.addRemainingCounters(res.getUsageCounters(), res.getPackageId());
+
+				if (res.getBucketArray() != null && res.getBucketArray().getTierBucket() != null) {
+
+					SortedSet<UsmsBucketDetailModel> buckets = CommandUtil
+							.getBucketDetailModelList(res.getBucketArray(), res.getPackageId(), maxVal);
+
+					SortedSet<ReferenceBucketModel> referenceBuckets = CommandUtil
+							.getReferenceBuckets(res.getPackageId(), maxVal);
+					CommandUtil.setMaxValueOfBuckets(res.getUsageCounters(), maxVal, buckets, res.getPackageId(),
+							res.getMeterType());
+
+					adjustmentDTO.setReferenceBuckets(referenceBuckets);
+					adjustmentDTO.setBucketDetails(buckets);
+					adjustmentDTO.setMainAccountCF(res.getMainAccountCF());
+				}
+				if (res.getBucketArray().getMainAccountValue() != null) {
+					adjustmentDTO.setMainAccountValue(Float.valueOf(res.getBucketArray().getMainAccountValue()));
+				}
+
+				setLegacyUnits(adjustmentDTO, maxVal, res);
+
+				adjustmentDTO.setUsageCounters(res.getUsageCounters());
+				adjustmentDTO.setAdjustmentType(USMSConstants.DEFAULT_ADJUSTMENT_TYPE);
+
+			}
+			adjustmentModel.setAccountDetails(accountDetails);
+			adjustmentModel.setAdjustment(adjustmentDTO);
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: getMeterAndBucketDetails");
+		return adjustmentModel;
+	}
+
+	/**
+	 * This method would set Legacy Unit DA.
+	 * 
+	 * @param adjustmentDTO
+	 * @param maxVal
+	 * @param res
+	 * @throws SmartMeteringException
+	 */
+	private void setLegacyUnits(AdjustmentDetailDTO adjustmentDTO, Map<Integer, Float> maxVal,
+			SelfCareMeterDataResponse res) {
+		adjustmentDTO.setLegacyUnits(getLegacyUnits(maxVal, res));
+	}
+
+	private float getLegacyUnits(Map<Integer, Float> maxVal, SelfCareMeterDataResponse res) {
+		Map<String, Integer> tierWithDAIDMap = CacheUtil.getBucketTypeWithDaIdMap(res.getPackageId());
+		if (tierWithDAIDMap.get(USMSConstants.LEGACY_BUCKET_NAME) != null) {
+
+			Float legacyValue = maxVal.get(tierWithDAIDMap.get(USMSConstants.LEGACY_BUCKET_NAME));
+			log.info("Legacy Units found is : {}", legacyValue);
+
+			if (legacyValue != null) {
+				float legacyUnits = RequestUtil.fromAIR(legacyValue).floatValue();
+				return legacyUnits;
+			}
+		}
+		return 0;
+	}
+
+	@Override
+	public Map<String, Object> processAdjustment(PaymentModel paymentModel, PaymentType adjustmentType)
+			throws Exception {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: processAdjustment");
+
+		Map<String, Object> map = null;
+		String meterNumber = paymentModel.getAccountDetails().getMeterNumber();
+
+		log.info("Adjustment Request received for meter Number : {}", meterNumber);
+
+		List<UsmsMeter> byMeterNumberAndStatusNotIn = meterRepository.findByMeterNumberAndStatusNotIn(meterNumber,
+				MeterStatus.INACTIVE, MeterStatus.INTRANSFER, MeterStatus.REPLACED, MeterStatus.NEW);
+
+		if (CollectionUtils.isEmpty(byMeterNumberAndStatusNotIn))
+			throw new SmartMeteringRuntimeException(ErrorMessage.NOT_FOUND, "valid meter");
+		UsmsMeter meter = byMeterNumberAndStatusNotIn.get(0);
+
+		Predicate<UsmsContract> activeContract = usmsContract -> ContractStatus.ACTIVE.equals(usmsContract.getStatus());
+		Predicate<UsmsContract> suspendContract = usmsContract -> ContractStatus.SUSPEND
+				.equals(usmsContract.getStatus());
+		Optional<UsmsContract> contractOpt = meter.getUsmsContracts().stream()
+				.filter(activeContract.or(suspendContract)).findAny();
+
+		if (contractOpt.isPresent()) {
+
+			UsmsContract contract = contractOpt.get();
+
+			switch (adjustmentType) {
+			case BALANCE_ADJUSTMENT:
+				map = processBalanceAdjustment(paymentModel, contract, meter, adjustmentType);
+				break;
+
+			case KVA_ADJUSTMENT:
+				map = processKVAUnitAdjustment(paymentModel, contract, meter, adjustmentType);
+				break;
+			case LEGACY_UNIT_ADJUSTMENT:
+				map = processLegacyUnitAdjustment(paymentModel, contract, meter, adjustmentType);
+				break;
+			default:
+				log.debug("Wrong payment type passed");
+				break;
+			}
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: processAdjustment");
+		return map;
+	}
+
+	/**
+	 * This method would execute adjustment related to Kva units only.
+	 * 
+	 * @throws Exception
+	 */
+	public Map<String, Object> processKVAUnitAdjustment(PaymentModel paymentModel, UsmsContract contract,
+			UsmsMeter meter, PaymentType adjustmentType) throws Exception {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: kvaUnitAdjustment");
+
+		Map<String, Object> map = null;
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+		AdjustmentDetailDTO adjustmentDTO = paymentModel.getAdjustment();
+
+		Double oldKva = meter.getKvaUnit();
+
+		if (adjustmentDTO.getKvaUnits() != null) {
+
+			meter.setKvaUnit(adjustmentDTO.getKvaUnits());
+
+			Long packageId = contract.getUsmsPackage().getId();
+
+			setAuxParamForKVAUnits(adjustmentDTO, request);
+
+			DedicatedAccountUpdateInformation[] dedicatedAccountArr = getKvaDA(adjustmentDTO, packageId, request,
+					oldKva);
+
+			if (dedicatedAccountArr != null && !MeterType.WATER.equals(meter.getMeterType())) {
+
+				map = executeAdjustment(paymentModel, request, meter, contract, packageId, dedicatedAccountArr, null,
+						null, adjustmentType);
+			}
+
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: kvaUnitAdjustment");
+		return map;
+	}
+
+	/**
+	 * This method would execute adjustment related to balance of the customer in
+	 * tiers, CFs and counters buckets.
+	 * 
+	 * @throws Exception
+	 */
+	public Map<String, Object> processBalanceAdjustment(PaymentModel paymentModel, UsmsContract contract,
+			UsmsMeter meter, PaymentType adjustmentType) throws Exception {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: saveAdjustmentData");
+
+		Map<String, Object> map = null;
+		AdjustmentDetailDTO adjustmentDTO = paymentModel.getAdjustment();
+		AccountDetailsDTO accountDetailDTO = paymentModel.getAccountDetails();
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+
+		Set<BucketType> alteredBuckets = new HashSet<>();
+		boolean isSpecialCustomer = USMSConstants.CUSTOMER_TYPE_SPECIAL
+				.equalsIgnoreCase(contract.getUsmsPackage().getCustomerType()) ? true : false;
+
+		Long packageId = contract.getUsmsPackage().getId();
+
+		setAdjustedAmount(adjustmentDTO, accountDetailDTO.getCurrentBalance());
+
+		UsageCounterUpdateInformation[] counterArr = getUsageCounters(adjustmentDTO, meter, alteredBuckets);
+
+		String mainAccountValue = getMainAccountValue(adjustmentDTO, meter);
+
+		setAuxParamForBalanceAdjustment(adjustmentDTO, request);
+
+		DedicatedAccountUpdateInformation[] dedicatedAccountArr = getAdjustmentDAs(adjustmentDTO, packageId, request,
+				meter.getMeterType(), alteredBuckets, mainAccountValue);
+
+		if (dedicatedAccountArr != null || isSpecialCustomer || MeterType.WATER.equals(meter.getMeterType())) {
+
+			map = executeAdjustment(paymentModel, request, meter, contract, packageId, dedicatedAccountArr, counterArr,
+					mainAccountValue, adjustmentType);
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: saveAdjustmentData");
+		return map;
+	}
+
+	/**
+	 * This method would execute adjustment related to legacy units only.
+	 * 
+	 * @throws Exception
+	 */
+	public Map<String, Object> processLegacyUnitAdjustment(PaymentModel paymentModel, UsmsContract contract,
+			UsmsMeter meter, PaymentType adjustmentType) throws Exception {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: legacyUnitAdjustment");
+
+		Map<String, Object> map = null;
+		AdjustmentDetailDTO adjustmentDTO = paymentModel.getAdjustment();
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+
+		Long packageId = contract.getUsmsPackage().getId();
+
+		setAuxParamForLegacyUnits(adjustmentDTO, request);
+
+		DedicatedAccountUpdateInformation[] dedicatedAccountArr = getLegacyUnitDA(adjustmentDTO, packageId, request);
+
+		if (dedicatedAccountArr != null && !MeterType.WATER.equals(meter.getMeterType())) {
+
+			map = executeAdjustment(paymentModel, request, meter, contract, packageId, dedicatedAccountArr, null, null,
+					adjustmentType);
+		}
+		log.debug("Exit :: UsmsPaymentServiceImpl :: legacyUnitAdjustment");
+
+		return map;
+	}
+
+	/**
+	 * This method would execute adjustment operation by executing commands on OCS
+	 * and saving details in the database.
+	 * 
+	 * @throws SmartMeteringException
+	 */
+	private Map<String, Object> executeAdjustment(PaymentModel paymentModel, SmartMeterRequest request, UsmsMeter meter,
+			UsmsContract contract, Long packageId, DedicatedAccountUpdateInformation[] dedicatedAccountArr,
+			UsageCounterUpdateInformation[] counterArr, String mainAccountValue, PaymentType adjustmentType)
+			throws SmartMeteringException {
+
+		Map<String, Object> map = null;
+		AdjustmentDetailDTO adjustmentDTO = paymentModel.getAdjustment();
+		AccountDetailsDTO accountDetailDTO = paymentModel.getAccountDetails();
+
+		boolean isSpecialCustomer = USMSConstants.CUSTOMER_TYPE_SPECIAL
+				.equalsIgnoreCase(contract.getUsmsPackage().getCustomerType()) ? true : false;
+
+		putAuxParamsInRequestForAdjustment(adjustmentDTO, meter, isSpecialCustomer, request, packageId,
+				dedicatedAccountArr, null, null);
+
+		Map<String, Object> balanceAndUnit = executeCommandsOnAdjustment(request, meter, isSpecialCustomer, packageId);
+
+		sendReadingsToDLMSSystem(meter, balanceAndUnit, isSpecialCustomer);
+
+		UsmsBucketContractMapping bucketContract = saveAdjustmentDetailInDatabase(adjustmentDTO, accountDetailDTO,
+				meter, contract, adjustmentType, balanceAndUnit);
+
+		map = mailService.getTopupDetails("AD-", bucketContract.getUsmsPayment(), paymentModel.getAccountDetails(),
+				null, PaymentType.ADJUSTMENT, isSpecialCustomer, adjustmentDTO.getKvaUnits(), null);
+
+		map.put(ADJUSTMENT_TYPE, adjustmentDTO.getAdjustmentType());
+		map.put(ADJUSTMENT_AMOUNT,
+				NumberUtil.truncateDecimalPlaces(adjustmentDTO.getAdjustedValue(), ValueConstant.TWO_DECIMAL_PLACES));
+		map.put(TRANSACTION_TYPE, request.getAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE));
+		map.put(LANGUAGE_PREFERENCE, contract.getPaymentResponsible().getLanguage());
+		map.put(REASON, bucketContract.getUsmsPayment().getReasonCode());
+
+		addLegacyDetailsInMap(map, adjustmentDTO, accountDetailDTO);
+		map.putAll(balanceAndUnit);
+		log.debug("map for pdf: {}", map);
+		return map;
+	}
+
+	/**
+	 * This method would add legacy units in Map object.
+	 */
+	private void addLegacyDetailsInMap(Map<String, Object> map, AdjustmentDetailDTO adjustmentDTO,
+			AccountDetailsDTO accountDetailDTO) {
+		map.put(OLD_LEGACY_UNITS, NumberUtil.truncatetoThreeDecimalPlaces(accountDetailDTO.getLegacyUnits()));
+
+		Double legacy = null;
+
+		if (USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentDTO.getAdjustmentType())) {
+			legacy = NumberUtil.additionOfFloats(accountDetailDTO.getLegacyUnits(),
+					adjustmentDTO.getRelLeagacyUnits(), ValueConstant.THREE);
+		} else {
+			legacy = NumberUtil.differenceOfFloats(accountDetailDTO.getLegacyUnits(),
+					adjustmentDTO.getRelLeagacyUnits(), ValueConstant.THREE);
+		}
+
+		map.put(LEGACY_UNITS, NumberUtil.truncatetoThreeDecimalPlacesDbl(legacy));
+	}
+
+	/**
+	 * This method would set legacy units aux params in request object
+	 * 
+	 * @param request
+	 */
+	private void setAuxParamForLegacyUnits(AdjustmentDetailDTO adjustmentDTO, SmartMeterRequest request) {
+
+		long legacyUnits = RequestUtil.toAIR(adjustmentDTO.getRelLeagacyUnits());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE, ValueConstant.LEGACY_TRANSACTION_TYPE);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, String.valueOf(legacyUnits));
+		request.putAuxiliaryRequestParameter(AuxRequestParam.IS_KVA_UPDATED, false);
+	}
+
+	/**
+	 * This method would get Main Account value.
+	 * 
+	 * @param adjustmentDTO
+	 * @param meter
+	 * @return
+	 */
+	private String getMainAccountValue(AdjustmentDetailDTO adjustmentDTO, UsmsMeter meter) {
+		String mainAccountValue = null;
+
+		if (MeterType.ELECTRICITY.equals(meter.getMeterType())) {
+
+			mainAccountValue = getDAValue(adjustmentDTO.getAdjustmentType(), adjustmentDTO.getAdjustedValue());
+		} else {
+			mainAccountValue = getDAValue(adjustmentDTO.getAdjustmentType(), adjustmentDTO.getRelMainAccountVal());
+		}
+		return mainAccountValue;
+	}
+
+	/**
+	 * This method would get Array of UsageCounters object.
+	 * 
+	 * @param adjustmentDTO
+	 * @param meter
+	 * @return
+	 */
+	private UsageCounterUpdateInformation[] getUsageCounters(AdjustmentDetailDTO adjustmentDTO, UsmsMeter meter,
+			Set<BucketType> alteredBuckets) {
+
+		UsageCounterUpdateInformation[] counterArr = null;
+
+		if (MeterType.WATER.equals(meter.getMeterType())
+				&& USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentDTO.getAdjustmentType())) {
+
+			List<UsageCounterData> updatedUsages = adjustmentDTO.getUsageCounters();
+			int index = 0;
+
+			if (!CollectionUtils.isEmpty(updatedUsages)) {
+				counterArr = new UsageCounterUpdateInformation[updatedUsages.size()];
+
+				for (UsageCounterData usageData : updatedUsages) {
+
+					String usageValue = usageData.getCounterValue();
+					if (Float.valueOf(usageValue) > 0) {
+						UsageCounterUpdateInformation counterObj = new UsageCounterUpdateInformation();
+						counterObj.setUsageCounterID(usageData.getCounterId());
+						counterObj.setAdjustmentUsageCounterMonetaryValueRelative(
+								getCounterValue(adjustmentDTO.getAdjustmentType(), usageValue));
+						counterArr[index++] = counterObj;
+
+						log.debug("Counter Object :: {}", counterObj);
+						alteredBuckets.add(usageData.getBucketType());
+					}
+				}
+			}
+		}
+		return counterArr;
+	}
+
+	/**
+	 * This method would execute commands on Adjustment.
+	 * 
+	 * @param isSpecialCustomer
+	 * @param packageId
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	private Map<String, Object> executeCommandsOnAdjustment(SmartMeterRequest request, UsmsMeter meter,
+			boolean isSpecialCustomer, Long packageId) throws SmartMeteringException {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: executeCommandsOnAdjustment");
+		String meterNumber = null;
+		executorService.execute(CommandMainTask.ADJUSTMENT, request);
+
+		CommandSubTask commandName = CommandSubTask.UPDATE_BALANCE_AND_DATE;
+		Command command = request.getExecutedCommand(commandName);
+		CommandResponse response = CommandUtil.getCommandSuccessResponse(command, commandName.name(),
+				String.valueOf(meter.getMsisdn()));
+		log.debug("UBAD response Status {}", response.getStatus());
+
+		if (StringUtils.hasText(meter.getMeterNumberPrefix()))
+			meterNumber = meter.getMeterNumber().substring(meter.getMeterNumberPrefix().length());
+		else
+			meterNumber = meter.getMeterNumber();
+
+		Map<String, Object> balanceAndUnit = getBalanceAndUnitsAfterUBAD(request, packageId, meterNumber,
+				isSpecialCustomer, meter.getMeterType());
+
+		log.info("Remaining balance and units - {}", balanceAndUnit);
+
+		executeRefillWithZeroBal(request);
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: executeCommandsOnAdjustment");
+		return balanceAndUnit;
+	}
+
+	/**
+	 * This method would execute the Refill command with amount 0.
+	 * 
+	 * @param request
+	 * @throws SmartMeteringException
+	 */
+	private void executeRefillWithZeroBal(SmartMeterRequest request) throws SmartMeteringException {
+		log.debug("Entered :: UsmsPaymentServiceImpl :: executeRefillWithZeroBal");
+
+		boolean isSpecialCust = (boolean) request.getAuxiliaryRequestParameter(AuxRequestParam.IS_SPECIAL_CUST);
+		MeterType meterType = (MeterType) request.getAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE);
+
+		if (!isSpecialCust && !MeterType.WATER.equals(meterType)) {
+
+			try {
+				request.putAuxiliaryRequestParameter(AuxRequestParam.ORIGIN_HOST_NAME, OriginHostNameEnum.CRM.name());
+				request.putAuxiliaryRequestParameter(AuxRequestParam.TOPUP_AMOUNT, 0.0f);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.IS_DISCONNECT_REFILL, true);
+				executorService.execute(CommandMainTask.REFILL, request);
+			} catch (Exception excep) {
+				log.error("Exception while executing Refill");
+				/*
+				 * throw new SmartMeteringException(ErrorMessage.AIR_FAILURE_RESPONSE,
+				 * " OCS on " + CommandMainTask.REFILL);
+				 */
+			}
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: executeRefillWithZeroBal");
+	}
+
+	/**
+	 * This method put Aux Variables required for commands to be executed for
+	 * adjustment.
+	 * 
+	 * @param adjustmentDTO
+	 * @param meter
+	 * @param isSpecialCustomer
+	 * @param request
+	 * @param packageId
+	 * @param dedicatedAccountArr
+	 */
+	private void putAuxParamsInRequestForAdjustment(AdjustmentDetailDTO adjustmentDTO, UsmsMeter meter,
+			boolean isSpecialCustomer, SmartMeterRequest request, Long packageId,
+			DedicatedAccountUpdateInformation[] dedicatedAccountArr, UsageCounterUpdateInformation[] counterArr,
+			String mainAccountValue) {
+
+		Object dedicatedObj = dedicatedAccountArr != null ? dedicatedAccountArr.length : null;
+		log.debug("Dedicated Account Update INformation Array : {}", dedicatedObj);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, meter.getMsisdn());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.ADJUSTMENT);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS, dedicatedAccountArr);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.COUNTERS_INFOS, counterArr);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.PACKAGE_ID, packageId);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.IS_SPECIAL_CUST, isSpecialCustomer);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.AMOUNT, mainAccountValue);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, meter.getMeterType());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ACCUMULATOR_VALUE, meter.getKvaUnit());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUSTOMER_TYPE,
+				meter.getUsmsCustomer().getUsmsApplicantType().getApplicantTypeCode());
+	}
+
+	/**
+	 * This method would save the adjustment details in the 'Payment' and 'Bucket'
+	 * table.
+	 */
+	private UsmsBucketContractMapping saveAdjustmentDetailInDatabase(AdjustmentDetailDTO adjustmentDTO,
+																	 AccountDetailsDTO accountDetailDTO, UsmsMeter meter,
+																	 UsmsContract contract, PaymentType adjustmentType,
+																	 Map<String, Object> balanceAndUnit) {
+
+		UsmsPayment payment = new UsmsPayment();
+		payment.setUsmsMeter(meter);
+		payment.setUsmsContract(contract);
+		payment.setUsmsCustomer(contract.getUsmsCustomer());
+		payment.setAmount(
+				adjustmentDTO.getAdjustedValue() != null ? Float.valueOf(adjustmentDTO.getAdjustedValue()) : null);
+		payment.setCurrentBalance(accountDetailDTO.getCurrentBalance());
+		payment.setCurrentUnit(accountDetailDTO.getCurrentUnits());
+		payment.setAfterUnit(Float.valueOf((String) balanceAndUnit.get("unitsAfter")));
+		payment.setFinTransNo(MDC.get(USMSConstants.TRANSACTION_ID));
+
+		if (USMSConstants.OTHER.equalsIgnoreCase(adjustmentDTO.getReason()))
+			payment.setReasonCode(adjustmentDTO.getOtherReason());
+		else
+			payment.setReasonCode(adjustmentDTO.getReason());
+
+		payment.setPaymentType(PaymentType.ADJUSTMENT);
+		payment.setPaymentSubType(adjustmentDTO.getAdjustmentType());
+		payment.setMeterType(meter.getMeterType());
+		payment.setOriginHostName(RequestUtil.getOriginHostName(false));
+		setUserMappingInPayment(payment);
+		log.debug("Adjustment type - {}", adjustmentType);
+
+		UsmsBucketContractMapping mapping = getContractMappingwithAdjustDetails(adjustmentDTO, accountDetailDTO, meter,
+				adjustmentType, payment);
+
+		return bucketContractMappingRepository.save(mapping);
+	}
+
+	/**
+	 * This method would return BucketContractMapping object with adjusted buckets.
+	 * 
+	 * @return
+	 */
+	private UsmsBucketContractMapping getContractMappingwithAdjustDetails(AdjustmentDetailDTO adjustmentDTO,
+			AccountDetailsDTO accountDetailDTO, UsmsMeter meter, PaymentType adjustmentType, UsmsPayment payment) {
+		UsmsBucketContractMapping mapping = new UsmsBucketContractMapping();
+
+		if (PaymentType.KVA_ADJUSTMENT.equals(adjustmentType)) {
+
+			UsmsKvaAdjustHistory kvaHistory = new UsmsKvaAdjustHistory();
+			kvaHistory.setKvaUnit(adjustmentDTO.getKvaUnits());
+			kvaHistory.setOldkvaUnit(accountDetailDTO.getKvaUnit());
+			meter.setKvaUnit(adjustmentDTO.getKvaUnits());
+			mapping.setUsmsKvaAdjustHistory(kvaHistory);
+		} else {
+
+			setBalanceAndLegacyBuckets(adjustmentDTO, meter, adjustmentType, mapping);
+		}
+		mapping.setOperation(adjustmentType.name());
+		mapping.setUsmsPayment(payment);
+		return mapping;
+	}
+
+	/**
+	 * This method set buckets of balance and legacy units in the mapping object.
+	 */
+	private void setBalanceAndLegacyBuckets(AdjustmentDetailDTO adjustmentDTO, UsmsMeter meter,
+			PaymentType adjustmentType, UsmsBucketContractMapping mapping) {
+		UsmsBucketDetails bucketDetails = new UsmsBucketDetails();
+
+		if (PaymentType.LEGACY_UNIT_ADJUSTMENT.equals(adjustmentType)) {
+
+			bucketDetails.setPrevLegacyUnitBucket(adjustmentDTO.getLegacyUnits());
+			bucketDetails.setCurrLegacyUnitBucket(adjustmentDTO.getRelLeagacyUnits());
+		} else {
+
+			if (adjustmentDTO.getBucketDetails() != null) {
+				adjustmentDTO.getBucketDetails().forEach(bucket -> {
+
+					BucketType bucketType = bucket.getBucketType();
+					String bucketValue = bucket.getBucketValue();
+					String bucketPrevValue = bucket.getBucketPrevValue();
+					setBucketCurrValueByType(bucketDetails, bucketType, bucketValue);
+					setBucketPrevValueByType(bucketDetails, bucketType, bucketPrevValue);
+				});
+			}
+
+			setWaterRelatedAttributes(adjustmentDTO, meter, bucketDetails);
+		}
+		mapping.setUsmsBucketDetails(bucketDetails);
+	}
+
+	/**
+	 * This method would set attributes related to water meter in BucketDetails
+	 * object.
+	 * 
+	 * @param bucketDetails
+	 */
+	private void setWaterRelatedAttributes(AdjustmentDetailDTO adjustmentDTO, UsmsMeter meter,
+			UsmsBucketDetails bucketDetails) {
+
+		String mainAccountVal = String.valueOf(adjustmentDTO.getMainAccountValue());
+		String relMainAccountVal = adjustmentDTO.getRelMainAccountVal();
+		String mainAccountCF = adjustmentDTO.getMainAccountCF();
+		String relMainAccountCF = adjustmentDTO.getRelMainAccountCF();
+		String meterType = meter.getMeterType().name();
+
+		setWaterAttrsInBucketObj(bucketDetails, mainAccountVal, relMainAccountVal, mainAccountCF, relMainAccountCF,
+				meterType);
+	}
+
+	/**
+	 * @param meterType
+	 */
+	private void setWaterAttrsInBucketObj(UsmsBucketDetails bucketDetails, String mainAccountVal,
+			String relMainAccountVal, String mainAccountCF, String relMainAccountCF, String meterType) {
+
+		if (MeterType.WATER.name().equals(meterType)) {
+			bucketDetails.setPrevMainAccountBalance(mainAccountVal == null ? null : Float.valueOf(mainAccountVal));
+			bucketDetails.setNewMainAccountBalance(relMainAccountVal == null ? null : Float.valueOf(relMainAccountVal));
+			bucketDetails.setCurrCf5Bucket(relMainAccountCF == null ? null : Float.valueOf(relMainAccountCF));
+			bucketDetails.setPrevCf5Bucket(mainAccountCF == null ? null : Float.valueOf(mainAccountCF));
+		}
+	}
+
+	/**
+	 * This method would return the list of DAs including Tier, Carry Forward and
+	 * Legacy unit buckets
+	 * 
+	 */
+	private DedicatedAccountUpdateInformation[] getAdjustmentDAs(AdjustmentDetailDTO adjustmentDTO, long packageId,
+			SmartMeterRequest request, MeterType meterType, Set<BucketType> alteredBuckets, String mainAccountValue) {
+
+		List<DedicatedAccountUpdateInformation> dedicatedAccountList = new ArrayList<>();
+		SortedSet<UsmsBucketDetailModel> bucketModels = adjustmentDTO.getBucketDetails();
+		Map<String, Integer> tierMap = CacheUtil.getBucketTypeWithDaIdMap(packageId);
+		log.debug("Tier DA map - {}", tierMap);
+
+		// Valid for Normal Customer
+		if (!CollectionUtils.isEmpty(tierMap) && !CollectionUtils.isEmpty(bucketModels)) {
+
+			int tierAdjustedAmount = addReferenceAndAmountBuckets(adjustmentDTO, packageId, meterType,
+					dedicatedAccountList, bucketModels, tierMap, alteredBuckets);
+
+			addRefillTrackerDA(meterType, dedicatedAccountList, tierAdjustedAmount, mainAccountValue,
+					adjustmentDTO.getAdjustmentType());
+		}
+
+		addMACarryForwardBucket(adjustmentDTO, dedicatedAccountList, tierMap);
+
+		addOtherDAs(packageId, meterType, dedicatedAccountList, alteredBuckets);
+
+		return CollectionUtils.isEmpty(dedicatedAccountList) ? null
+				: dedicatedAccountList.toArray(new DedicatedAccountUpdateInformation[0]);
+	}
+
+	/**
+	 * This method would return the list of DAs including Tier, Carry Forward and
+	 * Legacy unit buckets
+	 * 
+	 * @param oldKva
+	 */
+	private DedicatedAccountUpdateInformation[] getKvaDA(AdjustmentDetailDTO adjustmentDTO, long packageId,
+			SmartMeterRequest request, Double oldKva) {
+
+		List<DedicatedAccountUpdateInformation> dedicatedAccountList = new ArrayList<>();
+		Map<String, Integer> tierMap = CacheUtil.getBucketTypeWithDaIdMap(packageId);
+		log.debug("Tier DA map - {}", tierMap);
+
+		addKvaUnitDA(adjustmentDTO, request, dedicatedAccountList, tierMap, oldKva);
+
+		return CollectionUtils.isEmpty(dedicatedAccountList) ? null
+				: dedicatedAccountList.toArray(new DedicatedAccountUpdateInformation[0]);
+	}
+
+	/**
+	 * This method would return the list of DAs including Tier, Carry Forward and
+	 * Legacy unit buckets
+	 * 
+	 */
+	private DedicatedAccountUpdateInformation[] getLegacyUnitDA(AdjustmentDetailDTO adjustmentDTO, long packageId,
+			SmartMeterRequest request) {
+
+		List<DedicatedAccountUpdateInformation> dedicatedAccountList = new ArrayList<>();
+		Map<String, Integer> tierMap = CacheUtil.getBucketTypeWithDaIdMap(packageId);
+		log.debug("Tier DA map - {}", tierMap);
+
+		setLegacyDA(adjustmentDTO, dedicatedAccountList, tierMap);
+
+		return CollectionUtils.isEmpty(dedicatedAccountList) ? null
+				: dedicatedAccountList.toArray(new DedicatedAccountUpdateInformation[0]);
+	}
+
+	/**
+	 * This method would set Other DAs associated with Tier buckets to '1'.
+	 * 
+	 */
+	private void addOtherDAs(long packageId, MeterType meterType,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, Set<BucketType> alteredBuckets) {
+		Map<String, Integer> bucketWithOtherDAs = CacheUtil.getBucketTypeWithOtherDAMap(packageId);
+
+		if (MeterType.WATER.equals(meterType) && !CollectionUtils.isEmpty(bucketWithOtherDAs)
+				&& !CollectionUtils.isEmpty(alteredBuckets)) {
+
+			Integer unitType = RequestUtil.getDedicatedAccountUnitTypeForVol();
+			alteredBuckets.forEach(bucketType -> {
+
+				Integer otherDAId = bucketWithOtherDAs.get(bucketType.name());
+				if (otherDAId != null) {
+					setDAObjectInList(dedicatedAccountList, otherDAId, ValueConstant.ONE_STR, unitType);
+				}
+			});
+		}
+	}
+
+	/**
+	 * This method would add DAs linked with Bucket Amount and Reference Buckets.
+	 * 
+	 * @param adjustmentDTO
+	 * @param tierMap
+	 * @return
+	 */
+	private int addReferenceAndAmountBuckets(AdjustmentDetailDTO adjustmentDTO, long packageId, MeterType meterType,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, SortedSet<UsmsBucketDetailModel> bucketModels,
+			Map<String, Integer> tierMap, Set<BucketType> alteredBuckets) {
+
+		int tierAdjustedAmount = 0;
+		Map<String, Integer> bucketRefId = CacheUtil.getBucketTypeAndRefDAMap(packageId);
+		List<ReferenceBucketModel> referenceBucketList = new ArrayList<>();
+
+		if (adjustmentDTO.getReferenceBuckets() != null) {
+			referenceBucketList.addAll(adjustmentDTO.getReferenceBuckets());
+		}
+
+		// Set Amount Bucket DAs and their reference buckets
+		for (UsmsBucketDetailModel bucket : bucketModels) {
+
+			log.debug("Bucket Detail - {}", bucket);
+
+			// Set Tier and CArry Forward Bucket and get DA value updated
+			String daValue = addTierAndCarryForwardBucket(adjustmentDTO, dedicatedAccountList, tierMap, bucket);
+			tierAdjustedAmount += bucket.getBucketType().name().contains("TIER") && daValue != null
+					? Integer.valueOf(daValue)
+					: 0;
+
+			// Set Reference Bucket and get Reference Value updated
+			setReferenceDA(dedicatedAccountList, bucket, daValue, bucketRefId, meterType, referenceBucketList,
+					adjustmentDTO.getAdjustmentType(), alteredBuckets);
+
+		}
+		return tierAdjustedAmount;
+	}
+
+	/**
+	 * This method would add Tier ANd Carry Forward bucket DAs.
+	 * 
+	 * @return
+	 */
+	private String addTierAndCarryForwardBucket(AdjustmentDetailDTO adjustmentDTO,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, Map<String, Integer> tierMap,
+			UsmsBucketDetailModel bucket) {
+
+		String bucketType = bucket.getBucketType().name();
+		Integer daId = tierMap.get(bucketType);
+		String daValue = bucket.getBucketValue();
+
+		if (daId != null && daValue != null && Float.valueOf(daValue) > 0.0f) {
+
+			daValue = getDAValue(adjustmentDTO.getAdjustmentType(), bucket.getBucketValue());
+
+			setDAObjectInList(dedicatedAccountList, daId, daValue);
+		} else {
+			
+			daValue = null;
+		}
+		return daValue;
+	}
+
+	/**
+	 * This method would set carry forward bucket of mail account balance in the
+	 * dedicateAccount array.
+	 * 
+	 * @return
+	 */
+	private void addMACarryForwardBucket(AdjustmentDetailDTO adjustmentDTO,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, Map<String, Integer> tierMap) {
+
+		String mainAccountCF = adjustmentDTO.getRelMainAccountCF();
+		Integer daId = tierMap.get(ValueConstant.CF5);
+
+		if (daId != null && mainAccountCF != null && Float.valueOf(mainAccountCF) > 0.0f) {
+
+			// Irrespective of adjustment type, value from CF5 will always be deducted
+			String daValue = String.valueOf(RequestUtil.toAIR(Double.valueOf(mainAccountCF)) * -1);
+
+			setDAObjectInList(dedicatedAccountList, daId, daValue);
+		}
+	}
+
+	/**
+	 * This method would set Refill Tracker DA in the dedicateAccount array.
+	 * 
+	 * @return
+	 */
+	private void addRefillTrackerDA(MeterType meterType, List<DedicatedAccountUpdateInformation> dedicatedAccountList,
+			int tierAdjustedAmount, String mainAccountValue, String adjustmentType) {
+
+		int refillTrackerId = MeterType.ELECTRICITY.equals(meterType) ? ValueConstant.ELECTRIC_REFILL_TRACKER_DA_ID
+				: ValueConstant.WATER_REFILL_TRACKER_DA_ID;
+
+		if (MeterType.WATER.equals(meterType) && !USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentType)
+				&& tierAdjustedAmount != 0) {
+
+			if (!StringUtils.isEmpty(mainAccountValue))
+				tierAdjustedAmount = (tierAdjustedAmount + Integer.valueOf(mainAccountValue)) * -1;
+		} else if (MeterType.WATER.equals(meterType)) {
+
+			tierAdjustedAmount = 0;
+		}
+
+		if (tierAdjustedAmount > 0 || tierAdjustedAmount < 0) {
+
+			setDAObjectInList(dedicatedAccountList, refillTrackerId, String.valueOf(tierAdjustedAmount));
+		}
+	}
+
+	/**
+	 * This method would set KVA Unit DAs in the dedicateAccount array.
+	 * 
+	 * @return
+	 */
+	private void addKvaUnitDA(AdjustmentDetailDTO adjustmentDTO, SmartMeterRequest request,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, Map<String, Integer> tierMap, Double oldKva) {
+
+		if (adjustmentDTO.getKvaUnits() != null) {
+
+			DedicatedAccountUpdateInformation dedicatedObject = new DedicatedAccountUpdateInformation();
+			dedicatedObject.setDedicatedAccountID(ValueConstant.ACCUMULATOR_ID);
+			if (oldKva != null)
+				dedicatedObject.setAdjustmentAmountRelative(
+						String.valueOf(RequestUtil.toAIR(adjustmentDTO.getKvaUnits() - oldKva)));
+			else
+				dedicatedObject
+						.setAdjustmentAmountRelative(String.valueOf(RequestUtil.toAIR(adjustmentDTO.getKvaUnits())));
+			dedicatedObject.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitType());
+			dedicatedAccountList.add(dedicatedObject);
+
+			log.debug("AdjustmentObject - {}", dedicatedObject);
+		}
+	}
+
+	/**
+	 * This method would set legacy DA object in passed
+	 * {@linkplain DedicatedAccountUpdateInformation} Array.
+	 */
+	private void setLegacyDA(AdjustmentDetailDTO adjustmentDTO,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList, Map<String, Integer> tierMap) {
+
+		Integer legacyDAID = tierMap.get(USMSConstants.LEGACY_BUCKET_NAME);
+
+		if (adjustmentDTO.getRelLeagacyUnits() > 0.0f) {
+
+			String legacyUnits = String.valueOf(adjustmentDTO.getRelLeagacyUnits());
+			String daValue = getDAValue(adjustmentDTO.getAdjustmentType(), legacyUnits);
+
+			setDAObjectInList(dedicatedAccountList, legacyDAID, daValue);
+		}
+	}
+
+	/**
+	 * This method add DA Object in passed DA List.
+	 * 
+	 * @param dedicatedAccountList
+	 * @param legacyDAID
+	 * @param daValue
+	 */
+	private void setDAObjectInList(List<DedicatedAccountUpdateInformation> dedicatedAccountList, Integer legacyDAID,
+			String daValue) {
+
+		DedicatedAccountUpdateInformation dedicatedObject = new DedicatedAccountUpdateInformation();
+		dedicatedObject.setDedicatedAccountID(legacyDAID);
+		dedicatedObject.setAdjustmentAmountRelative(daValue);
+		dedicatedObject.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitTypeForUnits());
+		dedicatedAccountList.add(dedicatedObject);
+
+		log.debug("AdjustmentObject - {}", dedicatedObject);
+	}
+
+	/**
+	 * This method add DA Object in passed DA List.
+	 * 
+	 * @param dedicatedAccountList
+	 * @param legacyDAID
+	 * @param daValue
+	 */
+	private void setDAObjectInList(List<DedicatedAccountUpdateInformation> dedicatedAccountList, Integer legacyDAID,
+			String daValue, Integer unitType) {
+
+		DedicatedAccountUpdateInformation dedicatedObject = new DedicatedAccountUpdateInformation();
+		dedicatedObject.setDedicatedAccountID(legacyDAID);
+		dedicatedObject.setAdjustmentAmountRelative(daValue);
+		dedicatedObject.setDedicatedAccountUnitType(unitType);
+		dedicatedAccountList.add(dedicatedObject);
+
+		log.debug("AdjustmentObject - {}", dedicatedObject);
+	}
+
+	/**
+	 * THis method would set reference DAs of Tier buckets.
+	 * 
+	 * @return
+	 */
+	private void setReferenceDA(List<DedicatedAccountUpdateInformation> dedicatedAccountList,
+			UsmsBucketDetailModel bucket, String daValue, Map<String, Integer> bucketRefId, MeterType meterType,
+			List<ReferenceBucketModel> referenceBuckets, String adjustmentType, Set<BucketType> alteredBuckets) {
+
+		BucketType bucketType = bucket.getBucketType();
+		Integer referenceDAId = bucketRefId.get(bucketType.name());
+
+		log.debug(
+				"Entered setReferenceDA ::  daValue :- {} | referenceDAId :- {}| meterType :- {}| "
+						+ "adjustmentType :- {} | referenceBuckets :- {}",
+				daValue, referenceDAId, meterType, adjustmentType, referenceBuckets);
+
+		if (daValue != null && referenceDAId != null && Float.valueOf(daValue) != 0.0f
+				&& MeterType.ELECTRICITY.equals(meterType)) {
+
+			setDAObjectInList(dedicatedAccountList, referenceDAId, daValue);
+
+		} else if (referenceDAId != null && !USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentType)
+				&& !CollectionUtils.isEmpty(referenceBuckets)) {
+
+			ReferenceBucketModel referenceBucket = new ReferenceBucketModel();
+			referenceBucket.setBucketType(bucketType);
+			int index = referenceBuckets.indexOf(referenceBucket);
+
+			if (index >= 0) {
+				referenceBucket = referenceBuckets.get(index);
+				daValue = referenceBucket.getBucketValue();
+
+				if (Float.valueOf(daValue) > 0.0f) {
+
+					daValue = getDAValue(adjustmentType, referenceBucket.getBucketValue());
+					setDAObjectInList(dedicatedAccountList, referenceDAId, daValue);
+					alteredBuckets.add(referenceBucket.getBucketType());
+				}
+
+			}
+		}
+	}
+
+	/**
+	 * This method would set AuxParam param values for balance adjustment
+	 * {@link AdjustmentDetailDTO}
+	 * 
+	 * @param adjustmentDTO
+	 * @param request
+	 * @return
+	 */
+	private void setAuxParamForBalanceAdjustment(AdjustmentDetailDTO adjustmentDTO, SmartMeterRequest request) {
+
+		long adjustAmount = RequestUtil.toAIR(Float.valueOf(adjustmentDTO.getAdjustedValue())).longValue();
+
+		if (USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentDTO.getAdjustmentType())) {
+
+			request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE,
+					ValueConstant.TIER_CREDIT_TRANSACTION_CODE);
+		} else {
+
+			request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE,
+					ValueConstant.TIER_DEBIT_TRANSACTION_CODE);
+		}
+
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, adjustAmount);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.IS_KVA_UPDATED, false);
+
+	}
+
+	/**
+	 * This method would set AuxParam values based on Legacy units in
+	 * {@link AdjustmentDetailDTO}
+	 * 
+	 * @param adjustmentDTO
+	 * @param request
+	 * @return
+	 */
+	private void setAuxParamForKVAUnits(AdjustmentDetailDTO adjustmentDTO, SmartMeterRequest request) {
+
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE,
+				ValueConstant.KVA_CHANGE_TRANSACTION_CODE);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE,
+				RequestUtil.toAIR(adjustmentDTO.getKvaUnits()));
+		request.putAuxiliaryRequestParameter(AuxRequestParam.IS_KVA_UPDATED, true);
+
+	}
+
+	/**
+	 * This method would return positive/negative value of passed daValue based on
+	 * adjustment type.
+	 * 
+	 * @param adjustmentType
+	 * @param daValue
+	 * @return
+	 */
+	private String getDAValue(String adjustmentType, String daValue) {
+
+		String updatedValue = null;
+		if (daValue != null && USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentType)) {
+			updatedValue = String.valueOf(RequestUtil.toAIR(Double.valueOf(daValue)));
+		} else if (daValue != null) {
+			updatedValue = String.valueOf(RequestUtil.toAIR(Double.valueOf(daValue)) * -1);
+		}
+		return updatedValue;
+	}
+
+	/**
+	 * This method would return positive/negative value of passed counter Value
+	 * based on adjustment type.
+	 * 
+	 * @param adjustmentType
+	 * @param daValue
+	 * @return
+	 */
+	private String getCounterValue(String adjustmentType, String daValue) {
+
+		String updatedValue = null;
+		if (USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentType)) {
+			updatedValue = String.valueOf(RequestUtil.toAIR(Double.valueOf(daValue)) * -1);
+		} else {
+			updatedValue = String.valueOf(RequestUtil.toAIR(Double.valueOf(daValue)));
+		}
+		return updatedValue;
+	}
+
+	@Override
+	public Object getAdjustmentHistory(String meterNumber, String adjustmentSubType, String adjustmentType,
+			LocalDateTime startDate, LocalDateTime endDate, RequestSource requestSource) throws Exception {
+
+		log.debug("Entered :: UsmsPaymentServiceImpl :: getAdjustmentHistory");
+
+		if (startDate == null) {
+			startDate = LocalDateTime.now().with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0)
+					.withSecond(0).withNano(0);
+		}
+
+		List<AdjustmentHistoryDetail> adjustmentHistoryList = new ArrayList<>();
+
+		List<UsmsMeter> meterList = meterRepository.findByMeterNumber(meterNumber);
+		if (CollectionUtils.isEmpty(meterList))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, meterNumber);
+		Optional<UsmsMeter> meterOpt = Optional.ofNullable(meterList.get(0));
+
+		if (meterOpt.isPresent()) {
+
+			UsmsMeter meter = meterOpt.get();
+			UsmsContract contract = meter.getUsmsContracts().stream().max(Comparator.comparing(UsmsContract::getId))
+					.get();
+			log.info("Active Contract witRequestSource requestSourceh id : {}, found for passed meter Number - {}",
+					meter.getId(), meterNumber);
+			List<UsmsPayment> paymentList = paymentRepository.findByUsmsMeterAndPaymentSubTypeAndCreatedDateBetween(
+					meter, adjustmentSubType, startDate, endDate);
+			boolean isSpecialCustomer = USMSConstants.CUSTOMER_TYPE_SPECIAL
+					.equalsIgnoreCase(contract.getUsmsPackage().getCustomerType());
+
+			if (!CollectionUtils.isEmpty(paymentList)) {
+
+				populateAdjustmentHistoryList(adjustmentSubType, adjustmentType, adjustmentHistoryList, meter, contract,
+						paymentList, isSpecialCustomer);
+			}
+
+			// Check Source of Request i.e. from SELFCARE OR CRM
+			if (requestSource.equals(RequestSource.SELCARE)) {
+				SelfCareAdjustmentDetail selfCareAdjustmentBucket = new SelfCareAdjustmentDetail();
+				selfCareAdjustmentBucket.setMeterNumber(meterNumber);
+				selfCareAdjustmentBucket.setMeterType(meter.getMeterType().toString());
+				selfCareAdjustmentBucket.setCustomerType(
+						isSpecialCustomer ? USMSConstants.CUSTOMER_TYPE_SPECIAL : USMSConstants.CUSTOMER_TYPE_NORMAL);
+				selfCareAdjustmentBucket.setAdjustmentHistoryList(adjustmentHistoryList);
+				log.debug("Exit :: UsmsPaymentServiceImpl :: getAdjustmentHistory :: with SelfCare");
+				return selfCareAdjustmentBucket;
+			}
+
+		}
+
+		log.debug("Exit :: UsmsPaymentServiceImpl :: getAdjustmentHistory :: with CRM");
+		return adjustmentHistoryList;
+	}
+
+	/**
+	 * This method would populate list object with adjustment histories.
+	 */
+	private void populateAdjustmentHistoryList(String adjustmentSubType, String adjustmentType,
+			List<AdjustmentHistoryDetail> adjustmentHistoryList, UsmsMeter meter, UsmsContract usmsContract,
+			List<UsmsPayment> paymentList, boolean isSpecialCustomer) {
+
+		log.info("No of Payment done against meternumber ({}) - {}", meter.getMeterNumber(), paymentList.size());
+		Map<Long, UsmsPayment> paymentIds = paymentList.stream()
+				.collect(Collectors.toMap(UsmsPayment::getId, Function.identity()));
+		List<UsmsBucketContractMapping> buckets = bucketContractMappingRepository
+				.findByUsmsPaymentInOrderByIdDesc(paymentList);
+
+		if (!CollectionUtils.isEmpty(buckets)) {
+
+			log.info("No of Bucket entry found against Payment id is : {}", buckets.size());
+			String paymentSubType = USMSConstants.DEFAULT_ADJUSTMENT_TYPE.equals(adjustmentSubType)
+					? USMSConstants.ADJUSTMENT_CREDIT_TO_BALANCE
+					: (USMSConstants.DEBIT.equals(adjustmentSubType)) ? USMSConstants.ADJUSTMENT_DEBIT_FROM_BALANCE
+							: adjustmentSubType;
+
+			String email = usmsContract.getPaymentResponsible().getEmail();
+
+			buckets.forEach(bucket -> {
+
+				if (validateBucketWithAdjustHist(adjustmentType, bucket)) {
+
+					UsmsPayment payment = paymentIds.get(bucket.getUsmsPayment().getId());
+					AdjustmentHistoryDetail historyObject = getHistoryWithCommonDetails(paymentSubType, payment);
+					addKvaOrBalanceHistory(adjustmentType, meter, isSpecialCustomer, paymentSubType, bucket, payment,
+							historyObject);
+					historyObject.setTenantEmail(email);
+					if (USMSConstants.DEBIT.equalsIgnoreCase(payment.getPaymentSubType()))
+						historyObject.setTotalUnits(NumberUtil.differenceOfFloats(payment.getCurrentUnit(), payment.getAfterUnit(), ValueConstant.THREE).toString());
+					else
+						historyObject.setTotalUnits(NumberUtil.differenceOfFloats(payment.getAfterUnit(), payment.getCurrentUnit(), ValueConstant.THREE).toString());
+					adjustmentHistoryList.add(historyObject);
+				}
+
+			});
+		}
+	}
+
+	/**
+	 * This method would validate bucket operation with adjustment type
+	 * 
+	 * @return
+	 */
+	private boolean validateBucketWithAdjustHist(String adjustmentType, UsmsBucketContractMapping bucket) {
+
+		return (USMSConstants.KVA_STR.equals(adjustmentType)
+				&& PaymentType.KVA_ADJUSTMENT.name().equals(bucket.getOperation()))
+				|| (USMSConstants.LEGACY_STR.equals(adjustmentType)
+						&& PaymentType.LEGACY_UNIT_ADJUSTMENT.name().equals(bucket.getOperation()))
+				|| (USMSConstants.BALANCE_STR.equals(adjustmentType)
+						&& PaymentType.BALANCE_ADJUSTMENT.name().equals(bucket.getOperation()));
+	}
+
+	/**
+	 * This method would set adjustment values in the history Object.
+	 */
+	private void addKvaOrBalanceHistory(String adjustmentType, UsmsMeter meter, boolean isSpecialCustomer,
+			String paymentSubType, UsmsBucketContractMapping bucket, UsmsPayment payment,
+			AdjustmentHistoryDetail historyObject) {
+
+		if (USMSConstants.KVA_STR.equals(adjustmentType) && bucket.getUsmsKvaAdjustHistory() != null) {
+
+			UsmsKvaAdjustHistory kvaHistory = bucket.getUsmsKvaAdjustHistory();
+			historyObject.setOldKvaUnit(kvaHistory.getOldkvaUnit());
+			historyObject.setKvaUnit(kvaHistory.getKvaUnit());
+		} else {
+
+			addBucketDetailHistory(meter, isSpecialCustomer, paymentSubType, bucket, payment, historyObject);
+		}
+	}
+
+	/**
+	 * This method would return Adjustment history object with details common to all
+	 * types of adjustments.
+	 */
+	private AdjustmentHistoryDetail getHistoryWithCommonDetails(String paymentSubType, UsmsPayment payment) {
+		AdjustmentHistoryDetail historyObject = new AdjustmentHistoryDetail();
+		historyObject.setTransactionId(payment.getFinTransNo());
+		historyObject.setCustomerCode(payment.getUsmsCustomer().getCustCode());
+		historyObject.setTransactionType(paymentSubType);
+		historyObject.setTransactionDate(
+				DateTimeUtil.getFormattedTime(payment.getCreatedDate(), DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+		historyObject.setAgentId(payment.getPaymentBy());
+		historyObject.setReasonCode(NumberUtil.isNullOrEmpty(payment.getReasonCode()) ? null : payment.getReasonCode());
+		return historyObject;
+	}
+
+	/**
+	 * This method would add legacy and balance details in the adjustment history
+	 * object
+	 */
+	private AdjustmentHistoryDetail addBucketDetailHistory(UsmsMeter meter, boolean isSpecialCustomer,
+			String paymentSubType, UsmsBucketContractMapping bucket, UsmsPayment payment,
+			AdjustmentHistoryDetail historyObject) {
+
+		UsmsBucketDetails bucketDetails = bucket.getUsmsBucketDetails();
+		BucketHistoryDTO bucketHistory = new BucketHistoryDTO();
+		float balance = 0.0f;
+
+		historyObject.setBucketValues(bucketHistory);
+
+		if (PaymentType.LEGACY_UNIT_ADJUSTMENT.name().equals(bucket.getOperation())) {
+
+			bucketHistory.setPrevLegacyUnits(
+					Float.valueOf(NumberUtil.truncatetoThreeDecimalPlaces(bucketDetails.getPrevLegacyUnitBucket())));
+			bucketHistory.setLegacyUnits(
+					Float.valueOf(NumberUtil.truncatetoThreeDecimalPlaces(bucketDetails.getCurrLegacyUnitBucket())));
+		} else if (PaymentType.BALANCE_ADJUSTMENT.name().equals(bucket.getOperation())) {
+
+			balance = setBucketsAndTotalBalance(bucketDetails, balance, bucketHistory, isSpecialCustomer,
+					meter.getMeterType());
+			if (isSpecialCustomer) {
+				historyObject.setTotalBalance(NumberUtil.truncatetoTwoDecimalPlaces(payment.getAmount()));
+				historyObject.getBucketValues()
+						.setAmount(Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(payment.getAmount())));
+			} else {
+				historyObject.setTotalBalance(NumberUtil.truncatetoTwoDecimalPlaces(balance));
+			}
+		}
+		return historyObject;
+	}
+
+	@Override
+	public List<DebtHistoryDetail> getDebtHistory(String meterNumber, LocalDateTime startDate, LocalDateTime endDate)
+			throws SmartMeteringException {
+		log.debug("Entered :: UsmsPaymentServiceImpl :: getDebtHistory");
+		List<DebtHistoryDetail> debtDeductionHistory = new ArrayList<>();
+
+		List<UsmsMeter> byMeterNumber = meterRepository.findByMeterNumber(meterNumber);
+		if (CollectionUtils.isEmpty(byMeterNumber))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, meterNumber);
+
+		List<Long> contractIds = byMeterNumber.get(0).getUsmsContracts().stream().map(UsmsContract::getId)
+				.collect(Collectors.toList());
+
+		List<UsmsContractDebt> contractDebt = null;
+		if (!CollectionUtils.isEmpty(contractIds)) {
+
+			if (startDate == null) {
+				startDate = LocalDateTime.now().with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0)
+						.withSecond(0).withNano(0);
+			}
+
+			log.info("Active Contract with id : {}, found for passed meter Number - {}", contractIds, meterNumber);
+
+			List<UsmsPayment> paymentList = paymentRepository.findByUsmsContractIdInAndPaymentTypeInOrderByIdDesc(
+					contractIds, Arrays.asList(PaymentType.DEBT, PaymentType.TOPUP, PaymentType.BALANCE_TRANSFER,
+							PaymentType.DEBT_TRANSFER),
+					startDate, endDate);
+			log.debug("total payment(s) on contracts: {}, are: {}", contractIds, paymentList.size());
+			contractDebt = usmsContractDebtRepository
+					.findAllByUsmsContractIdInAndCreatedDateBetweenAndDebtAdjustedTypeInOrderByIdDesc(contractIds,
+							startDate, endDate, PaymentType.GRACE_ACTION.toString());
+			log.debug("total debt(s) on contracts: {}, are: {}", contractIds, contractDebt.size());
+			addDebtDeductedOnPaymentAndTransfer(debtDeductionHistory, contractIds, paymentList);
+
+			addDebtDeductedOnGraceAction(debtDeductionHistory, contractDebt);
+		}
+		log.debug("Exit :: UsmsPaymentServiceImpl :: getDebtHistory");
+		return debtDeductionHistory;
+	}
+
+	/**
+	 * @param contractId
+	 * @param paymentList
+	 */
+	private void addDebtDeductedOnPaymentAndTransfer(List<DebtHistoryDetail> debtHistory, List<Long> contractId,
+			List<UsmsPayment> paymentList) {
+		if (!CollectionUtils.isEmpty(paymentList)) {
+
+			log.info("No of Payment done against Contract id:{} is {}", contractId, paymentList.size());
+
+			paymentList.forEach(payment -> {
+
+				if (payment.getDebt() != null && payment.getDebt().getDebtAdjusted() != 0) {
+
+					DebtHistoryDetail history = new DebtHistoryDetail();
+
+					setPrevAndOpenDebt(payment.getDebt(), history);
+
+					history.setTransactionId(payment.getFinTransNo());
+					history.setMeterNumber(payment.getUsmsMeter().getMeterNumber());
+					history.setCustomerCode(payment.getUsmsCustomer().getCustCode());
+					history.setTransactionDate(DateTimeUtil.getFormattedTime(payment.getCreatedDate(),
+							DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+					history.setDebtModel(payment.getDebt().getDebtClearingMethod());
+					history.setReasonCode(payment.getReasonCode());
+					history.setAgentName(payment.getPaymentBy());
+					history.setSiteId(payment.getUsmsSite() != null ? payment.getUsmsSite().getName() : null);
+					history.setServiceProviderName(
+							payment.getUsmsMeter().getUsmsServiceProvider().getServiceProviderName());
+					history.setTransactionType(payment.getPaymentType().name());
+					debtHistory.add(history);
+				}
+			});
+		}
+	}
+
+	/**
+	 * This method would set debt adjusted, previous and new debt values in history
+	 * object.
+	 */
+	private void setPrevAndOpenDebt(UsmsContractDebt debt, DebtHistoryDetail history) {
+		Float openDebt = debt.getOpenDebtAmount();
+		Float debtAdjusted = Float.valueOf(NumberUtil.roundOffToTwoDecimalPlaces(debt.getDebtAdjusted()));
+		debtAdjusted = debtAdjusted * (-1);
+
+		Double previousDebt = NumberUtil.additionOfFloats(openDebt, debtAdjusted, ValueConstant.TWO);
+
+		history.setAmount(NumberUtil.truncatetoTwoDecimalPlaces(debtAdjusted));
+		history.setPreviousDebt(NumberUtil.truncatetoTwoDecimalPlacesDbl(previousDebt));
+		history.setOpenDebt(NumberUtil.truncatetoTwoDecimalPlaces(openDebt));
+	}
+
+	/**
+	 * This method would add debt details deducted on grace action.
+	 */
+	private void addDebtDeductedOnGraceAction(List<DebtHistoryDetail> debtHistory,
+			List<UsmsContractDebt> contractDebt) {
+		if (!CollectionUtils.isEmpty(contractDebt)) {
+			contractDebt.forEach(debt -> {
+
+				DebtHistoryDetail history = new DebtHistoryDetail();
+
+				history.setTransactionDate(
+						DateTimeUtil.getFormattedTime(debt.getCreatedDate(), DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+				history.setTransactionType(debt.getDebtAdjustedType());
+				history.setDebtModel(debt.getDebtClearingMethod());
+				setPrevAndOpenDebt(debt, history);
+				history.setServiceProviderName(null);
+				history.setSiteId(null);
+				history.setAgentName(null);
+				history.setReasonCode(null);
+				history.setCustomerCode(null);
+				history.setTransactionId(null);
+				history.setMeterNumber(null);
+				debtHistory.add(history);
+			});
+
+		}
+	}
+
+	/**
+	 * This method would set Tier and Carry Forward bucket values and also set total
+	 * balance.
+	 * 
+	 * @param bucketDetails
+	 * @param balance
+	 * @param bucketHistory
+	 */
+	private float setBucketsAndTotalBalance(UsmsBucketDetails bucketDetails, float balance,
+			BucketHistoryDTO bucketHistory, boolean isSpecialCustomer, MeterType meterType) {
+
+		if (!isSpecialCustomer) {
+
+			bucketHistory.setT1Amount(getBucketOrDefaultValue(bucketDetails.getCurrTier1Bucket()));
+			balance += bucketHistory.getT1Amount();
+
+			bucketHistory.setT2Amount(getBucketOrDefaultValue(bucketDetails.getCurrTier2Bucket()));
+			balance += bucketHistory.getT2Amount();
+
+			bucketHistory.setT3Amount(getBucketOrDefaultValue(bucketDetails.getCurrTier3Bucket()));
+			balance += bucketHistory.getT3Amount();
+
+			bucketHistory.setT4Amount(getBucketOrDefaultValue(bucketDetails.getCurrTier4Bucket()));
+			balance += bucketHistory.getT4Amount();
+
+			bucketHistory.setCf1Amount(getBucketOrDefaultValue(bucketDetails.getCurrCf1Bucket()));
+			balance += bucketHistory.getCf1Amount();
+
+			bucketHistory.setCf2Amount(getBucketOrDefaultValue(bucketDetails.getCurrCf2Bucket()));
+			balance += bucketHistory.getCf2Amount();
+
+			bucketHistory.setCf3Amount(getBucketOrDefaultValue(bucketDetails.getCurrCf3Bucket()));
+			balance += bucketHistory.getCf3Amount();
+
+			bucketHistory.setCf4Amount(getBucketOrDefaultValue(bucketDetails.getCurrCf4Bucket()));
+			balance += bucketHistory.getCf4Amount();
+
+			bucketHistory.setAmount(Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(balance)));
+		}
+		if (MeterType.WATER.equals(meterType)) {
+
+			bucketHistory.setCf5Amount(getBucketOrDefaultValue(bucketDetails.getCurrCf5Bucket()));
+			balance += bucketHistory.getCf5Amount();
+
+			bucketHistory.setMainAccountBalance(getBucketOrDefaultValue(bucketDetails.getNewMainAccountBalance()));
+			balance += bucketHistory.getMainAccountBalance();
+
+		}
+		return Float.parseFloat(NumberUtil.truncatetoTwoDecimalPlaces(balance));
+	}
+
+	/**
+	 * This method would return bucket default or actual value.
+	 */
+	private Float getBucketOrDefaultValue(Float bucketValue) {
+
+		return Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(bucketValue));
+	}
+
+	/**
+	 * This method would check balance of customer from UpadteBalanceAndDate
+	 * response. If balance is zero, execute cuculus commands to disconnect meter.
+	 * 
+	 * @param meterNumber after removing company prefix
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	private Map<String, Object> getBalanceAndUnitsAfterUBAD(SmartMeterRequest request, Long packageId,
+			String meterNumber, boolean isSpecialCustomer, MeterType meterType) throws SmartMeteringException {
+
+		Command command = request.getExecutedCommand(CommandSubTask.GET_BALANCE_AND_DATE);
+
+		if (command != null) {
+
+			Map<String, Object> currentBalance = CommandUtil.getCurrentBalance(command.getCommandResponse(), packageId,
+					"dedicatedAccountInformation", isSpecialCustomer, meterType);
+			log.info("Current Balance After UBAD is : {}", currentBalance);
+
+			return currentBalance;
+		} else {
+			log.error("Error while fetching prev UBAD command");
+			throw new SmartMeteringException(ErrorMessage.COMMAND_EXECUTION_FAILED,
+					"Error while fetching prev UBAD command");
+		}
+	}
+
+	/**
+	 * THis method would set the adjustment amount in passed
+	 * {@link AdjustmentDetailDTO} object.
+	 */
+	private void setAdjustedAmount(AdjustmentDetailDTO adjustmentDTO, Float oldBalance) {
+
+		if (adjustmentDTO.getAdjustedValue() != null && oldBalance != null) {
+			Float newBalance = Float.valueOf(adjustmentDTO.getAdjustedValue());
+			float difference = NumberUtil.differenceOfFloats(newBalance, oldBalance, ValueConstant.TWO).floatValue();
+			difference = difference < 0 ? difference * -1 : difference;
+			adjustmentDTO.setAdjustedValue(String.valueOf(difference));
+		}
+	}
+
+	@Override
+	public List<HistoryTopupSummaryView> getTopupHistory(String meterNumber, LocalDateTime startDate,
+			LocalDateTime endDate) throws SmartMeteringException {
+
+		if (startDate == null) {
+			startDate = LocalDateTime.now().with(TemporalAdjusters.firstDayOfMonth()).withHour(0).withMinute(0)
+					.withSecond(0).withNano(0);
+		}
+
+		if (endDate == null) {
+			endDate = LocalDateTime.now().with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59)
+					.withSecond(59).withNano(0);
+		}
+
+		List<HistoryTopupSummaryView> list = new ArrayList<>();// mysqlService.getTopupHistory(meterNumber);
+		paymentRepository.findByMeterIdIn(meterNumber, PaymentType.TOPUP, startDate, endDate).forEach(pay -> {
+
+			HistoryTopupSummaryView h = new HistoryTopupSummaryView();
+			h.setCustCode(pay.getUsmsCustomer() != null ? pay.getUsmsCustomer().getCustCode() : null);
+			h.setDeltaAmount(
+					pay.getAmount() != null ? Double.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(pay.getAmount()))
+							: null);
+			h.setMeterNumber(meterNumber);
+			h.setOriginNodeId(pay.getOriginHostName());
+			h.setPaymentMode(pay.getPaymentMode().name());
+			h.setSiteName(pay.getUsmsSite() != null ? pay.getUsmsSite().getName() : null);
+			h.setSubscriberNumber(pay.getUsmsMeter() != null ? String.valueOf(pay.getUsmsMeter().getMsisdn()) : null);
+			h.setOriginTransactionId(pay.getFinTransNo());
+			h.setTransactionDateTime(
+					DateTimeUtil.getFormattedTime(pay.getCreatedDate(), DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+			h.setCardTransactionId(pay.getTransactionId());
+			h.setUserId(pay.getUsmsUser() != null ? pay.getUsmsUser().getUsername() : null);
+			h.setActualRechageAmount(
+					Float.valueOf(NumberUtil.truncatetoTwoDecimalPlaces(pay.getActualRechageAmount())));
+			h.setDeductedamount(
+					NumberUtil.differenceOfFloats(pay.getAmount(), pay.getActualRechageAmount(), ValueConstant.TWO)
+							.floatValue());
+			if (Objects.nonNull(pay.getCurrentBalance()))
+				h.setBalanceBefore(Precision.round((pay.getCurrentBalance()), 2));
+			if (Objects.nonNull(pay.getAfterBalance()))
+				h.setBalanceAfter(Precision.round((pay.getAfterBalance()), 2));
+			h.setTenantEmail(pay.getUsmsContract().getPaymentResponsible().getEmail());
+			h.setUnitsCredited(
+					NumberUtil.differenceOfFloats(pay.getAfterUnit(), pay.getCurrentUnit(), ValueConstant.THREE));
+			list.add(h);
+		});
+		return list;
+	}
+
+	@Override
+	public Workbook getTopupHistoryDetail(String meterNumber, String transactionId) throws SmartMeteringException {
+		List<UsmsMeter> meterList = meterRepository.findByMeterNumber(meterNumber);
+		log.debug("meter: {} found against meter number: {}", meterList, meterNumber);
+		if (CollectionUtils.isEmpty(meterList))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Meter with meter number " + meterNumber);
+
+		Optional<UsmsMeter> meterOpt = meterList.stream().filter(mtr -> mtr.getStatus() == MeterStatus.ACTIVE)
+				.findFirst();
+
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE, "for msisdn " + meterNumber + " ");
+
+		Long packageId = CommandUtil.getPackageIdFromMeter(meterOpt.get());
+		List<HistoryTopupDetailView> list = mysqlService.getTopupHistoryDetail(meterNumber, transactionId);
+
+		return ExcelUtil.exportMeterTopupData(list, packageId);
+	}
+
+	@Override
+	public boolean emailTopupHistoryDetail(String meterNumber, String transactionId)
+			throws SmartMeteringException, IOException {
+		Workbook workbook = getTopupHistoryDetail(meterNumber, transactionId);
+
+		List<UsmsMeter> meterList = meterRepository.findByMeterNumber(meterNumber);
+		log.debug("meter: {} found against meter number: {}", meterList, meterNumber);
+		if (CollectionUtils.isEmpty(meterList))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Meter with meter number " + meterNumber);
+
+		Optional<UsmsMeter> meterOpt = meterList.stream().filter(mtr -> mtr.getStatus() == MeterStatus.ACTIVE)
+				.findFirst();
+
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE, "for msisdn " + meterNumber + " ");
+
+		Optional<UsmsContract> contract = meterOpt.get().getUsmsContracts().stream()
+				.filter(cont -> cont.getStatus() != ContractStatus.INACTIVE).findFirst();
+
+		if (!contract.isPresent())
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, contract);
+
+		String email = contract.get().getPaymentResponsible().getEmail();
+
+		mailService.sendWorkbookAsEmail(email, "Topup History", null, workbook);
+		return true;
+	}
+
+	@Override
+	public SelfCareMeterDataResponse selfCareTopup(SelfcareTopupDTO selfcareTopup, PaymentType paymentType)
+			throws SelfCareRequestProcessException {
+
+		log.debug("Entered:: UsmsPaymentServiceImpl :: selfCareTopup");
+		SelfCareMeterDataResponse topupResponse = null;
+		boolean isTopupAllowed = true;
+		String minimumRechargeVal = "0.0";
+		SmartMeterRequest request = null;
+
+		try {
+			AccountDetailsDTO account = getAccountDetailFromSelfcareTopupDTO(selfcareTopup);
+			PaymentDetailDTO payment = getPaymentDetailFromSelfcareTopupDTO(selfcareTopup);
+			Float amount = payment.getAmount();
+
+			isTopupAllowed = amount > 0.0f;
+			request = new SmartMeterRequestImpl();
+			JSONObject object = this.usmsMeterService.validateMeterNumber(account.getMeterNumber(), request);
+			String meterStatus = String.valueOf(object.get("meterStatus"));
+			minimumRechargeVal = String.valueOf(object.get("minimumRechargeValue"));
+
+			if (StringUtils.hasText(minimumRechargeVal) && meterStatus != null && amount != null) {
+				isTopupAllowed = amount >= Float.valueOf(minimumRechargeVal);
+			}
+
+			if (meterStatus != null && isTopupAllowed) {
+
+				log.debug("Topup is allowed");
+				UsmsMeter meter = getMeterByMeterNumber(account);
+				Map<Integer, Float> map = new HashMap<Integer, Float>();
+				SelfCareMeterDataResponse response = getMeterInfoFromGBAD(request, meter, map);
+				if (response != null) {
+					account = getAccountDetails(meter, map, response);
+				}
+
+				log.info("Account Details Object - {}", account);
+				SelfcareTopupCustomerDetail custObj = new SelfcareTopupCustomerDetail(selfcareTopup.getMobileNumber(),
+						selfcareTopup.getEmailId(), selfcareTopup.getMerchantName(),
+						selfcareTopup.getMerchantReferenceNum());
+
+				topupResponse = this.topup(account, payment, selfcareTopup.getOriginHostName(), paymentType,
+						SelfCareMeterDataResponse.class, selfcareTopup.getSubscriberType(), custObj);
+			} else {
+
+				throw new SelfCareRequestProcessException(ErrorMessage.TOP_UP_IS_NOT_ALLOWED,
+						selfcareTopup.getTransactionNumber(), account.getMeterNumber());
+			}
+
+		} catch (SmartMeteringException excep) {
+
+			log.error("Error while doing top-up from external system : {} | exception : {}",
+					selfcareTopup.getOriginHostName(), excep);
+			throw new SelfCareRequestProcessException(excep.getError(), excep.getMessage(),
+					selfcareTopup.getTransactionNumber(), excep.getCode(), excep.getArgs());
+		} catch (Exception excep) {
+
+			log.error("Error while doing top-up from external system : {} | exception : {}",
+					selfcareTopup.getOriginHostName(), excep);
+			throw new SelfCareRequestProcessException(excep.getMessage(), selfcareTopup.getTransactionNumber(), null);
+		}
+
+		log.debug("Exit:: UsmsPaymentServiceImpl :: selfCareTopup");
+		return topupResponse;
+	}
+
+	private AccountDetailsDTO getAccountDetailFromSelfcareTopupDTO(@Valid SelfcareTopupDTO selfcareTopup) {
+		AccountDetailsDTO account = new AccountDetailsDTO();
+		account.setMeterNumber(selfcareTopup.getMeterNumber());
+		return account;
+	}
+
+	private PaymentDetailDTO getPaymentDetailFromSelfcareTopupDTO(@Valid SelfcareTopupDTO selfcareTopup)
+			throws ParseException {
+		PaymentDetailDTO payment = new PaymentDetailDTO();
+		payment.setActualAmount(Float.valueOf(selfcareTopup.getTransactionAmount()));
+		payment.setAmount(Float.valueOf(selfcareTopup.getTransactionAmount()));
+		payment.setBankName(selfcareTopup.getBankName());
+
+		String cardNumber = selfcareTopup.getCardNumber() == null ? "0" : selfcareTopup.getCardNumber();
+		payment.setModeNumber(cardNumber);
+
+		String chequeDate = selfcareTopup.getChequeDate();
+		LocalDateTime date = chequeDate == null ? null
+				: new Timestamp(new SimpleDateFormat("dd-MM-yyyy HH:mm:ss").parse(chequeDate).getTime())
+						.toLocalDateTime();
+
+		payment.setTransactionDateTime(date);
+		if (selfcareTopup.getChequeNum() != null)
+			payment.setModeNumber(selfcareTopup.getChequeNum());
+		payment.setPaymentMode(PaymentMode.valueOf(selfcareTopup.getChannel().toUpperCase()));
+		payment.setTransactionId(
+				StringUtils.hasText(selfcareTopup.getBankTransactionNumber()) ? selfcareTopup.getBankTransactionNumber()
+						: selfcareTopup.getTransactionNumber());
+		return payment;
+	}
+
+	public void sendNotification(Long phoneNumber, String message) {
+		log.info("sending message: {}, to: {}", message, phoneNumber);
+		if (Objects.nonNull(phoneNumber))
+			notificationService.sendMessageToCIS(RequestUtil.getTransactionId(), RequestUtil.getTransactionTime(),
+					message, String.valueOf(phoneNumber));
+	}
+
+	@Override
+	@Async("taskExecutor")
+	public void sendMessage(Map<String, Object> data, PaymentType paymentType) {
+
+		String message = null;
+		String txnType = (String) data.get(TRANSACTION_TYPE);
+		String adjustedAmount = (String) data.get(ADJUSTMENT_AMOUNT);
+		String adjustmentType = (String) data.get(ADJUSTMENT_TYPE);
+		Long phoneNumber = (Long) data.get("phoneNumber");
+		LanguageEnum custLanguage = (LanguageEnum) data.get(LANGUAGE_PREFERENCE);
+		String reason = (String) data.get(REASON);
+		String meterNumber = (String) data.get("meterNumber");
+		String meterType = (String) data.get("meterType");
+		Double kvaUnit = (Double) data.get("kvaUnit");
+		String legacyUnits = (String) data.get(LEGACY_UNITS);
+		MeterType type = MeterType.valueOf(meterType);
+
+		log.info("getting message for transaction type: {}, and adjustment amount: {}", txnType, adjustedAmount);
+
+		switch (paymentType) {
+
+		case BALANCE_ADJUSTMENT:
+
+			message = sendMessageOnBalanceAdjust(txnType, adjustedAmount, custLanguage, reason, meterNumber, type);
+			break;
+		case LEGACY_UNIT_ADJUSTMENT:
+
+			message = sendMessageOnLegacyAdjust(adjustmentType, custLanguage, reason, meterNumber, type, legacyUnits);
+			break;
+		case KVA_ADJUSTMENT:
+
+			message = sendMessageOnKVAChange(custLanguage, meterNumber, type, kvaUnit);
+			break;
+		default:
+			log.error("no message found");
+			throw new SmartMeteringRuntimeException(ErrorMessage.NOT_FOUND, "valid message");
+		}
+
+		sendNotification(phoneNumber, message);
+	}
+
+	/**
+	 * This message would send notification on KVA adjustment.
+	 * 
+	 * @return
+	 */
+	private String sendMessageOnKVAChange(LanguageEnum custLanguage, String meterNumber, MeterType type,
+			Double kvaUnit) {
+
+		String message = null;
+		String newKvaUnit = NumberUtil.roundOffToTwoDecimalPlacesDbl(kvaUnit);
+		message = messageSourceUtil.getMessage("adjustment.kva.change", custLanguage,
+				new Object[] { newKvaUnit, type.name(), meterNumber });
+		return message;
+	}
+
+	/**
+	 * This message would send notification on Legacy Unit adjustment.
+	 * 
+	 * @return
+	 */
+	private String sendMessageOnLegacyAdjust(String adjustmentType, LanguageEnum custLanguage, String reason,
+			String meterNumber, MeterType type, String legacyUnits) {
+
+		String message = null;
+		switch (adjustmentType) {
+
+		case USMSConstants.DEFAULT_ADJUSTMENT_TYPE:
+			message = messageSourceUtil.getMessage("adjustment.legacy.credit", custLanguage,
+					new Object[] { legacyUnits, reason, type.name(), meterNumber });
+			break;
+		default:
+			message = messageSourceUtil.getMessage("adjustment.legacy.debit", custLanguage,
+					new Object[] { legacyUnits, reason, type.name(), meterNumber });
+			break;
+		}
+		return message;
+	}
+
+	/**
+	 * This message would send notification on balance adjustment.
+	 * 
+	 * @return
+	 */
+	private String sendMessageOnBalanceAdjust(String txnType, String adjustedAmount, LanguageEnum custLanguage,
+			String reason, String meterNumber, MeterType type) {
+
+		String message = null;
+		switch (txnType) {
+
+		case ValueConstant.TIER_CREDIT_TRANSACTION_CODE:
+			message = messageSourceUtil.getMessage("adjustment.credit", custLanguage,
+					new Object[] { adjustedAmount, reason, type.name(), meterNumber });
+			break;
+
+		case ValueConstant.TIER_DEBIT_TRANSACTION_CODE:
+			message = messageSourceUtil.getMessage("adjustment.debit", custLanguage,
+					new Object[] { adjustedAmount, reason, type.name(), meterNumber });
+			break;
+		default:
+			log.error("no message found on Balance adjustment");
+			throw new SmartMeteringRuntimeException(ErrorMessage.NOT_FOUND, "valid message");
+		}
+		return message;
+	}
+
+	@Override
+	public Map<String, Object> balanceTransfer(BalanceTransferVM balanceTransferVM) {
+		Optional<UsmsContract> fromContract = usmsContractRepository
+				.findTop1ByUsmsMeterMeterNumberOrderByIdDesc(balanceTransferVM.getFromMeterNumber());
+		Optional<UsmsContract> toContract = usmsContractRepository
+				.findTop1ByUsmsMeterMeterNumberOrderByIdDesc(balanceTransferVM.getToMeterNumber());
+		log.info("is transfer balance possible: {}, from: {}, to: {}",
+				fromContract.isPresent() && toContract.isPresent(), balanceTransferVM.getFromMeterNumber(),
+				balanceTransferVM.getToMeterNumber());
+		if (!(fromContract.isPresent() && toContract.isPresent()))
+			throw new SmartMeteringRuntimeException(ErrorMessage.NOT_FOUND, "from/to meter");
+
+		// debit balance from meter
+		UsmsPayment usmsPayment = debitOnOCS(fromContract.get(), balanceTransferVM, PaymentType.BALANCE_TRANSFER);
+		AccountDetailsDTO accountDetails = null;
+		try {
+			accountDetails = getAccountDetailFromMeter(Optional.ofNullable(fromContract.get().getUsmsMeter()));
+			usmsPayment.setAfterUnit(accountDetails.getCurrentUnits());
+		} catch (SmartMeteringException e) {
+			log.error("account details fail after balance transfer", e);
+		}
+
+		// credit balance to meter
+		creditOnOCS(toContract.get(), balanceTransferVM);
+
+		if (balanceTransferVM.getLegacyUnits() != null && balanceTransferVM.getLegacyUnits() > 0)
+			transferLegacy(toContract.get(), balanceTransferVM.getLegacyUnits());
+
+		// Send Messages to sender and Recipient
+		UsmsPaymentResponsible paymentResponsible = fromContract.get().getPaymentResponsible();
+		UsmsMeter fromMeter = usmsPayment.getUsmsMeter();
+		UsmsMeter toMeter = toContract.get().getUsmsMeter();
+		UsmsPaymentResponsible toPaymentResponsible = toContract.get().getPaymentResponsible();
+
+		sendBalanceTransferSMS(balanceTransferVM, paymentResponsible, fromMeter, toMeter, toPaymentResponsible);
+
+		// save balance transfer history
+		UsmsBalanceTransferHistory balanceTransferHistory = saveBalanceTransferHistory(balanceTransferVM, fromContract,
+				toContract, usmsPayment);
+
+		// set reading on DLMS
+		Map<String, Object> map = new HashMap<>();
+		map.put("unitsAfter", Objects.nonNull(accountDetails)
+				&& Objects.nonNull(accountDetails.getCurrentUnits()) ? accountDetails.getCurrentUnits().toString() : "0.00");
+		sendReadingsToDLMSSystem(usmsPayment.getUsmsMeter(), map, USMSConstants.CUSTOMER_TYPE_SPECIAL
+				.equalsIgnoreCase(usmsPayment.getUsmsContract().getUsmsPackage()
+						.getCustomerType()));
+
+		return createPdfForBalanceTransfer(balanceTransferHistory, paymentResponsible, toPaymentResponsible, fromMeter,
+				toMeter, usmsPayment);
+
+	}
+
+	/**
+	 * @param balanceTransferHistory
+	 * @param fromPaymentResponsible
+	 * @param toPaymentResponsible
+	 * @param usmsPayment
+	 * @return
+	 */
+	private Map<String, Object> createPdfForBalanceTransfer(UsmsBalanceTransferHistory balanceTransferHistory,
+															UsmsPaymentResponsible fromPaymentResponsible, UsmsPaymentResponsible toPaymentResponsible,
+															UsmsMeter fromMeter, UsmsMeter toMeter, UsmsPayment usmsPayment) {
+
+		Map<String, Object> map = new HashMap<>();
+
+		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+		UsmsUser user = ((DomainUserDetail) auth.getPrincipal()).getUser();
+
+		// used for address of logged in user
+		if (user != null) {
+			map.put("emailId", user.getSite().getEmailId());
+			map.put("phnNo", user.getSite().getContactNumber());
+			map.put("postalCode", user.getSite().getPinCode());
+			map.put("kampong", user.getSite().getUsmsKampong().getName());
+			map.put("addressLine", user.getSite().getAddressLine());
+			map.put("country", user.getSite().getCountry());
+			map.put("counterCode", user.getSite().getName());
+			map.put("agentCode", user.getUsername());
+		}
+
+		// from customer info
+		if (fromPaymentResponsible != null) {
+			map.put("fromCustomerName", fromPaymentResponsible.getName());
+			map.put("fromCustomerContactNumber", fromPaymentResponsible.getSmsNo());
+			String fromApplicantType = fromPaymentResponsible.getUsmsCustomer().getUsmsApplicantType()
+					.getApplicantTypeCode();
+
+			log.info("Setting applicantType : {} from meter number in balance transfer", fromApplicantType);
+
+			if (fromMeter.getMeterType().equals(MeterType.ELECTRICITY) && fromApplicantType != null
+					&& fromApplicantType.equalsIgnoreCase(USMSConstants.COMMERCIAL)) {
+				map.put("fromApplicantType", fromApplicantType);
+				log.info("Setting from kva units : {} in balance transfer ", fromMeter.getKvaUnit());
+				map.put("fromKvaUnits", fromMeter.getKvaUnit());
+			}
+		}
+
+		// to customer info
+		if (toPaymentResponsible != null) {
+			map.put("toCustomerName", toPaymentResponsible.getName());
+			map.put("toCustomerContactNumber", toPaymentResponsible.getSmsNo());
+			String toApplicantType = toPaymentResponsible.getUsmsCustomer().getUsmsApplicantType()
+					.getApplicantTypeCode();
+			log.info("Setting applicantType : {} to meter number in balance transfer", toApplicantType);
+			if (toMeter.getMeterType().equals(MeterType.ELECTRICITY) && toApplicantType != null
+					&& toApplicantType.equalsIgnoreCase(USMSConstants.COMMERCIAL)) {
+				map.put("toApplicantType", toApplicantType);
+				log.info("Setting to kva units : {} in balance transfer ", toMeter.getKvaUnit());
+				map.put("toKvaUnits", toMeter.getKvaUnit());
+			}
+		}
+
+		// from meter info
+		if (fromMeter != null) {
+			map.put("fromMeterType", fromMeter.getMeterType());
+			map.put("fromMeterNumber", balanceTransferHistory.getFromMeter());
+		}
+
+		// to meter info
+		if (toMeter != null) {
+			map.put("toMeterType", toMeter.getMeterType());
+			map.put("toMeterNumber", balanceTransferHistory.getToMeter());
+		}
+
+		// balance transfer history
+		if (balanceTransferHistory != null) {
+			// map.put("fullTransferOperation", balanceTransferHistory.isFullAmount());
+			map.put("amountTransferred", NumberUtil.truncatetoTwoDecimalPlaces(balanceTransferHistory.getAmount()));
+			map.put("legacyUnitsTransferred",
+					NumberUtil.truncatetoThreeDecimalPlaces(balanceTransferHistory.getLegacyUnits()));
+			map.put("reason", balanceTransferHistory.getReason());
+			map.put("transactionId", balanceTransferHistory.getTransactionId()); // to be checked
+			map.put("creationDate", DateTimeUtil.getFormattedTime(balanceTransferHistory.getCreatedDate(), // to be
+																											// checked
+					DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+			map.put("receiptNumber", +Calendar.getInstance().get(Calendar.YEAR) + "-" + balanceTransferHistory.getId()); // to
+																															// be
+																															// checked
+		}
+		map.put("unitsProcessed", NumberUtil.differenceOfFloats(usmsPayment.getCurrentUnit(), usmsPayment.getAfterUnit(), ValueConstant.THREE));
+
+		return map;
+	}
+
+	private void sendBalanceTransferSMS(BalanceTransferVM balanceTransferVM, UsmsPaymentResponsible paymentResponsible,
+			UsmsMeter fromMeter, UsmsMeter toMeter, UsmsPaymentResponsible toPaymentResponsible) {
+		if (Objects.isNull(balanceTransferVM.getAmount()))
+			balanceTransferVM.setAmount(0.0f);
+		String message = messageSourceUtil.getMessage("balance.transfer", paymentResponsible.getLanguage(),
+				new Object[] { fromMeter.getMeterType(), fromMeter.getMeterNumber(),
+						NumberUtil.truncatetoTwoDecimalPlaces(balanceTransferVM.getAmount()),
+						toMeter.getMeterNumber() });
+		log.debug("msg constructed: {}", message);
+		String message2 = messageSourceUtil.getMessage("balance.transfer.recipient", toPaymentResponsible.getLanguage(),
+				new Object[] { toMeter.getMeterType(), toMeter.getMeterNumber(),
+						NumberUtil.truncatetoTwoDecimalPlaces(balanceTransferVM.getAmount()),
+						fromMeter.getMeterNumber() });
+		log.debug("recipient msg constructed: {}", message2);
+		sendNotification(paymentResponsible.getSmsNo(), message);
+		sendNotification(toPaymentResponsible.getSmsNo(), message2);
+		if (Objects.nonNull(balanceTransferVM.getLegacyUnits()) && balanceTransferVM.getLegacyUnits() > 0) {
+			String messageLegacyDebit = messageSourceUtil.getMessage("adjustment.legacy.debit",
+					paymentResponsible.getLanguage(), new Object[] { balanceTransferVM.getLegacyUnits(),
+							balanceTransferVM.getReason(), fromMeter.getMeterType(), fromMeter.getMeterNumber() });
+			log.debug("msg constructed: {}", messageLegacyDebit);
+			sendNotification(paymentResponsible.getSmsNo(), messageLegacyDebit);
+			String messageLegacyCredit = messageSourceUtil.getMessage("adjustment.legacy.credit",
+					toPaymentResponsible.getLanguage(), new Object[] { balanceTransferVM.getLegacyUnits(),
+							balanceTransferVM.getReason(), toMeter.getMeterType(), toMeter.getMeterNumber() });
+			log.debug("msg constructed: {}", messageLegacyCredit);
+			sendNotification(toPaymentResponsible.getSmsNo(), messageLegacyCredit);
+		}
+	}
+
+	/**
+	 * refund amount to customer
+	 *
+	 * @param balanceTransferVM
+	 * @return
+	 */
+	@Override
+	public File refund(BalanceTransferVM balanceTransferVM) {
+		Optional<UsmsContract> fromContract = usmsContractRepository
+				.findTop1ByUsmsMeterMeterNumberOrderByIdDesc(balanceTransferVM.getFromMeterNumber());
+		log.info("refund possible: {}", fromContract.isPresent());
+		if (!fromContract.isPresent())
+			throw new SmartMeteringRuntimeException(ErrorMessage.NOT_FOUND,
+					"meter " + balanceTransferVM.getFromMeterNumber());
+
+		// debit balance from meter
+		UsmsPayment usmsPayment = debitOnOCS(fromContract.get(), balanceTransferVM, PaymentType.REFUND);
+
+		AccountDetailsDTO accountDetails = null;
+		try {
+			accountDetails = getAccountDetails(usmsPayment.getUsmsMeter().getId());
+			usmsPayment.setAfterUnit(accountDetails.getCurrentUnits());
+		} catch (SmartMeteringException e) {
+			log.error("error getting accountDetails: {}", accountDetails);
+		}
+
+		// save balance transfer history
+		saveRefundHistory(balanceTransferVM, fromContract, accountDetails, usmsPayment);
+
+		Map<String, Object> map = getRefundMap(usmsPayment, balanceTransferVM, accountDetails);
+
+		// set reading on DLMS
+		sendReadingsToDLMSSystem(usmsPayment.getUsmsMeter(), map, USMSConstants.CUSTOMER_TYPE_SPECIAL
+				.equalsIgnoreCase(usmsPayment.getUsmsContract().getUsmsPackage().getCustomerType()));
+
+		// refund sms
+		UsmsPaymentResponsible paymentResponsible = fromContract.get().getPaymentResponsible();
+
+		if (Objects.isNull(balanceTransferVM.getAmount()))
+			balanceTransferVM.setAmount(0.0f);
+
+		String message = messageSourceUtil.getMessage("refund.amount", paymentResponsible.getLanguage(),
+				new Object[] { usmsPayment.getUsmsMeter().getMeterType(), usmsPayment.getUsmsMeter().getMeterNumber(),
+						NumberUtil.truncatetoTwoDecimalPlaces(balanceTransferVM.getAmount()),
+						balanceTransferVM.getReason() });
+		sendNotification(paymentResponsible.getSmsNo(), message);
+
+		// email refund receipt
+		File file = emailRefund(map, balanceTransferVM.getFromMeterNumber());
+		return file;
+	}
+
+	@Override
+	public boolean prePayment(UsmsMeter meter) throws SmartMeteringException {
+		AccountDetailsDTO accountDetailFromMeter = getAccountDetailFromMeter(Optional.of(meter));
+		int unitsInt = accountDetailFromMeter.getCurrentUnits() == null ? 0
+				: (int) (accountDetailFromMeter.getCurrentUnits() * 100);
+		usmsMeterService.postMeterReadings(meter, unitsInt);
+		return true;
+	}
+
+	private File emailRefund(Map<String, Object> data, String meterNumber) {
+		File file = null;
+		try {
+			String fileName = "REFUND-" + MDC.get(USMSConstants.TRANSACTION_ID);
+			file = mailService.createPdf(data, USMSConstants.REFUND_RECEIPT, meterNumber, fileName);
+			String to = (String) data.get("to");
+			HashMap<String, Object> map = new HashMap<>();
+			map.put("name", data.get("userName"));
+			String body = mailService.build(map, USMSConstants.REFUND_MAIL);
+			if (StringUtils.hasText(to))
+				mailService.sendEmail(to, "USMS Refund e-Receipt_" + data.get("receiptNumber"), body, file);
+		} catch (Exception e) {
+			log.error("error while creating file");
+		}
+		return file;
+	}
+
+	private Map<String, Object> getRefundMap(UsmsPayment usmsPayment, BalanceTransferVM balanceTransferVM,
+			AccountDetailsDTO accountDetails) {
+		Map<String, Object> map = new HashMap<>();
+		map.put("receiptNumber", "RF-" + Calendar.getInstance().get(Calendar.YEAR) + "-" + usmsPayment.getId());
+		UsmsUser user = usmsPayment.getUsmsUser();
+		map.put("emailId", user.getSite().getEmailId());
+		map.put("phnNo", user.getSite().getContactNumber());
+		map.put("postalCode", user.getSite().getPinCode());
+		map.put("kampong", user.getSite().getUsmsKampong().getName());
+		map.put("addressLine", user.getSite().getAddressLine());
+		map.put("country", user.getSite().getCountry());
+		map.put("image", MailService.getImageBinary());
+		map.put("userName", usmsPayment.getUsmsContract().getPaymentResponsible().getName());
+		map.put("to", usmsPayment.getUsmsContract().getPaymentResponsible().getEmail());
+		map.put("meterType", usmsPayment.getUsmsMeter().getMeterType().name());
+		map.put("phoneNumber", usmsPayment.getUsmsContract().getPaymentResponsible().getSmsNo());
+		map.put("meterNumber", usmsPayment.getUsmsMeter().getMeterNumber());
+		map.put("creationDate",
+				DateTimeUtil.getFormattedTime(usmsPayment.getCreatedDate(), DateTimeUtil.CRM_DATE_TIME_FORMATTER));
+		map.put("customerType", usmsPayment.getUsmsContract().getUsmsPackage().getCustomerType());
+		map.put("serviceProvider", usmsPayment.getUsmsMeter().getUsmsServiceProvider().getServiceProviderName());
+		map.put("refundAmount", NumberUtil.truncatetoTwoDecimalPlaces(balanceTransferVM.getAmount()));
+		map.put("counterCode", user.getSite().getName());
+		map.put("balanceBefore", usmsPayment.getCurrentBalance());
+		map.put("agentCode", user.getUsername());
+		map.put("remainingBalance", accountDetails != null ? accountDetails.getCurrentBalance() : USMSConstants.EMPTY);
+		map.put("unitsBefore", usmsPayment != null ? usmsPayment.getCurrentUnit().toString() : "0.00");
+		map.put("unitsAfter", accountDetails != null ? accountDetails.getCurrentUnits().toString() : "0.00");
+		map.put("unitsProcessed", NumberUtil.differenceOfFloats(usmsPayment.getCurrentUnit(), usmsPayment.getAfterUnit(), ValueConstant.THREE));
+		return map;
+	}
+
+	private void transferLegacy(UsmsContract contract, Float legacyUnits) {
+		log.info("crediting lagecy: {}, to: {}", legacyUnits, contract.getContractNumber());
+		UsmsMeter usmsMeter = contract.getUsmsMeter();
+		String legacyAir = RequestUtil.getTransactionAmount(legacyUnits);
+		CuculusRequestImpl cuculusRequest = new CuculusRequestImpl();
+		cuculusRequest.setMeterNumber(usmsMeter.getMeterNumber());
+		Long packageIdFromContract = CommandUtil.getPackageIdFromContract(contract);
+		Map<String, Integer> tierTypeWithDaIdMap = CacheUtil.getBucketTypeWithDaIdMap(packageIdFromContract);
+		Integer legacyDAID = tierTypeWithDaIdMap.get(USMSConstants.LEGACY_BUCKET_NAME);
+		DedicatedAccountUpdateInformation daCF0 = new DedicatedAccountUpdateInformation(legacyDAID,
+				RequestUtil.getDedicatedAccountUnitType()).setAdjustmentAmountRelative(legacyAir);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS,
+				new DedicatedAccountUpdateInformation[] { daCF0 });
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE, ValueConstant.BALTRANSFER);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, legacyAir);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, usmsMeter.getMsisdn());
+		log.debug("executing UBAD with request: {}", cuculusRequest);
+		executorService.execute(CommandMainTask.UPDATE_BALANCE_AND_DATE, cuculusRequest);
+		if (!cuculusRequest.isRequestExecutedSuccessfully())
+			throw new SmartMeteringRuntimeException("failed to credit legacy units to " + usmsMeter.getMeterNumber(),
+					"500");
+	}
+
+	private UsmsBalanceTransferHistory saveBalanceTransferHistory(BalanceTransferVM balanceTransferVM,
+																  Optional<UsmsContract> fromContract,
+																  Optional<UsmsContract> toContract,
+																  UsmsPayment usmsPayment) {
+		UsmsBalanceTransferHistoryDTO historyDTO = new UsmsBalanceTransferHistoryDTO()
+				.setAmount(balanceTransferVM.getAmount()).setFromMeter(balanceTransferVM.getFromMeterNumber())
+				.setToMeter(balanceTransferVM.getToMeterNumber()).setFullAmount(balanceTransferVM.isFullAmount())
+				.setLegacyUnits(balanceTransferVM.getLegacyUnits())
+				.setTransactionId(MDC.get(USMSConstants.TRANSACTION_ID))
+				.setFromMsisdn(fromContract.get().getUsmsMeter().getMsisdn())
+				.setToMsisdn(toContract.get().getUsmsMeter().getMsisdn()).setReason(balanceTransferVM.getReason())
+				.setUnitsProcessed(NumberUtil.differenceOfFloats(usmsPayment.getCurrentUnit(), usmsPayment.getAfterUnit(), ValueConstant.THREE).floatValue());
+
+		log.info("saving balance transfer history into db: {}", historyDTO);
+		return balanceTransferHistoryService.saveBalanceTransferHistory(historyDTO);
+		// return historyDTO;
+	}
+
+	private UsmsRefundHistoryDTO saveRefundHistory(BalanceTransferVM balanceTransferVM,
+												   Optional<UsmsContract> fromContract, AccountDetailsDTO accountDetails, UsmsPayment usmsPayment) {
+		UsmsRefundHistoryDTO historyDTO = new UsmsRefundHistoryDTO().setAmount(balanceTransferVM.getAmount())
+				.setFromMeter(balanceTransferVM.getFromMeterNumber()).setFullAmount(balanceTransferVM.isFullAmount())
+				.setTransactionId(MDC.get(USMSConstants.TRANSACTION_ID))
+				.setFromMsisdn(fromContract.get().getUsmsMeter().getMsisdn()).setReason(balanceTransferVM.getReason())
+				.setRemainingBalance(accountDetails != null ? accountDetails.getCurrentBalance() : null)
+				.setUnitsProcessed(NumberUtil.differenceOfFloats(usmsPayment.getCurrentUnit(), usmsPayment.getAfterUnit(), ValueConstant.THREE).floatValue());
+		log.info("saving balance transfer history into db: {}", historyDTO);
+		refundHistoryService.saveRefundHistory(historyDTO);
+		return historyDTO;
+	}
+
+	private void creditOnOCS(UsmsContract contract, BalanceTransferVM balanceTransferVM) {
+
+		SelfcareTopupDTO topupDTO = new SelfcareTopupDTO();
+		topupDTO.setMeterNumber(contract.getUsmsMeter().getMeterNumber());
+		topupDTO.setChannel(PaymentMode.CASH.name());
+		topupDTO.setTransactionAmount(balanceTransferVM.getAmount().toString());
+		topupDTO.setDateTime(LocalDateTime.now().toString());
+		topupDTO.setTransactionNumber(MDC.get(USMSConstants.TRANSACTION_ID));
+		topupDTO.setOriginHostName("SelfCare");
+		topupDTO.setSelfCareId(ValueConstant.ZERO);
+		topupDTO.setTransactionType(PaymentType.BALANCE_TRANSFER.name());
+		Long smsNo = contract.getPaymentResponsible().getSmsNo();
+		topupDTO.setMobileNumber(smsNo != null ? smsNo.toString() : null);
+		topupDTO.setEmailId(contract.getPaymentResponsible().getEmail());
+
+		try {
+
+			selfCareTopup(topupDTO, PaymentType.BALANCE_TRANSFER);
+		} catch (SelfCareRequestProcessException e) {
+
+			throw new SmartMeteringRuntimeException(e.getError(), e.getMessage(), e.getCode(), e.getArgs());
+		}
+	}
+
+	private UsmsPayment debitOnOCS(UsmsContract from, BalanceTransferVM balanceTransferVM, PaymentType paymentType) {
+		log.debug("debiting balance: {}, from: {}", balanceTransferVM, from.getContractNumber());
+		UsmsMeter fromMeter = from.getUsmsMeter();
+		if (balanceTransferVM.isFullAmount()) {
+			if (!MeterStatus.SUSPEND.equals(fromMeter.getStatus()) && !MeterType.WATER.equals(fromMeter.getMeterType())
+					&& !USMSConstants.CUSTOMER_TYPE_SPECIAL.equalsIgnoreCase(from.getUsmsPackage().getCustomerType())) {
+				try {
+					log.info("suspending account: {}, meter: {}", from.getContractNumber(), fromMeter.getMeterNumber());
+					customerService.toggleSuspension(fromMeter.getId(), false, false,
+							ValueConstant.UA_CONNECTION_FLAG_1);
+					log.info("getting account details: {}, meter: {}", from.getContractNumber(),
+							fromMeter.getMeterNumber());
+					// TODO: 6/26/2020 Thread.sleep(50000)
+					UsmsPaymentResponsible fromPR = from.getPaymentResponsible();
+					String message = messageSourceUtil.getMessage("disconnect_normal", fromPR.getLanguage(),
+							new Object[] { fromMeter.getMeterType(), fromMeter.getMeterNumber() });
+					sendNotification(fromPR.getSmsNo(), message);
+					AccountDetailsDTO accountDetails = getAccountDetails(fromMeter.getId());
+					balanceTransferVM.setAmount(accountDetails.getCurrentBalanceFull());
+					if (accountDetails.getLegacyUnits() > 0 && balanceTransferVM.getLegacyUnits() > 0)
+						balanceTransferVM.setLegacyUnits(accountDetails.getLegacyUnits());
+					log.debug("updated debiting balance: {}, from: {}", balanceTransferVM, from.getContractNumber());
+				} catch (SmartMeteringException e) {
+					throw new SmartMeteringRuntimeException(e.getError(), e.getMessage(), e.getCode(), e.getArgs());
+				}
+			} else {
+				try {
+					AccountDetailsDTO accountDetailsDTO = getAccountDetails(fromMeter.getId());
+					balanceTransferVM.setAmount(accountDetailsDTO.getCurrentBalanceFull());
+					balanceTransferVM.setLegacyUnits(accountDetailsDTO.getLegacyUnits());
+				} catch (SmartMeteringException e) {
+					log.error("error getting account details: {}", e);
+				}
+			}
+		}
+
+		float legacy = balanceTransferVM.getLegacyUnits() != null ? balanceTransferVM.getLegacyUnits() * -1 : 0.0f;
+		Float amount = balanceTransferVM.getAmount() != null ? balanceTransferVM.getAmount() : 0.0f;
+		SmartMeterRequest request = debitBalance(amount, legacy, from);
+		if (!request.isRequestExecutedSuccessfully())
+			throw new SmartMeteringRuntimeException(
+					"error transferring " + amount + " from " + fromMeter.getMeterNumber(), "500");
+		else
+			return saveDebitInfoInPayment(from, balanceTransferVM, paymentType);
+	}
+
+	private UsmsPayment saveDebitInfoInPayment(UsmsContract contract, BalanceTransferVM balanceTransferVM,
+			PaymentType paymentType) {
+		UsmsPayment payment = new UsmsPayment();
+		UsmsMeter meter = contract.getUsmsMeter();
+		payment.setUsmsMeter(meter);
+		payment.setUsmsContract(contract);
+		payment.setUsmsCustomer(contract.getUsmsCustomer());
+		payment.setAmount(Float.valueOf(balanceTransferVM.getAmount()));
+		payment.setCurrentBalance(balanceTransferVM.getCurrentBalance());
+		payment.setAfterBalance(balanceTransferVM.getCurrentBalance() - payment.getAmount());
+		payment.setCurrentUnit(balanceTransferVM.getCurrentUnits());
+		payment.setFinTransNo(MDC.get(USMSConstants.TRANSACTION_ID));
+
+		payment.setReasonCode(balanceTransferVM.getReason());
+		payment.setPaymentType(paymentType);
+		payment.setPaymentSubType(USMSConstants.DEBIT);
+		payment.setMeterType(meter.getMeterType());
+		payment.setOriginHostName(RequestUtil.getOriginHostName(false));
+		setUserMappingInPayment(payment);
+		return paymentRepository.save(payment);
+	}
+
+	private SmartMeterRequest debitBalance(Float amount, Float legacy, UsmsContract from) {
+		log.info("debiting amount: {}, from: {}", amount, from.getContractNumber());
+		UsmsMeter usmsMeter = from.getUsmsMeter();
+		String amountAir = RequestUtil.getTransactionAmount(amount);
+		String legacyAir = RequestUtil.getTransactionAmount(legacy);
+		CuculusRequestImpl cuculusRequest = new CuculusRequestImpl();
+		cuculusRequest.setMeterNumber(usmsMeter.getMeterNumber());
+		UsmsPackageCode usmsPackage = from.getUsmsPackage();
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE, ValueConstant.BALTRANSFER);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, amountAir);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, usmsMeter.getMsisdn());
+		if (USMSConstants.CUSTOMER_TYPE_SPECIAL.equalsIgnoreCase(usmsPackage.getCustomerType())) {
+			// negative amount in case of special customer
+			if (amount != 0)
+				amountAir = USMSConstants.HYPHEN.concat(amountAir);
+			constructSpecialRequest(cuculusRequest, amountAir, legacy, legacyAir, usmsPackage);
+			executorService.execute(CommandMainTask.BALANCE_TRANSFER_SPECIAL, cuculusRequest);
+		} else {
+			constructNormalRequest(cuculusRequest, amountAir, legacy, legacyAir, usmsPackage);
+			executorService.execute(CommandMainTask.BALANCE_TRANSFER, cuculusRequest);
+		}
+		return cuculusRequest;
+	}
+
+	private void constructNormalRequest(CuculusRequestImpl cuculusRequest, String amountAir, Float legacy,
+			String legacyAir, UsmsPackageCode usmsPackage) {
+		/* ---------- param for UBAD ---------- */
+		Map<String, Integer> tierTypeWithDaIdMap = CacheUtil.getBucketTypeWithDaIdMap(usmsPackage.getId());
+		Integer legacyDAID = tierTypeWithDaIdMap.get(USMSConstants.LEGACY_BUCKET_NAME);
+		DedicatedAccountUpdateInformation da6004 = new DedicatedAccountUpdateInformation(6004,
+				RequestUtil.getDedicatedAccountUnitType()).setDedicatedAccountValueNew(amountAir);
+		DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformations;
+		if (Objects.nonNull(legacy) && legacy != 0.0f) {
+			DedicatedAccountUpdateInformation daCF0 = new DedicatedAccountUpdateInformation(legacyDAID,
+					RequestUtil.getDedicatedAccountUnitType()).setAdjustmentAmountRelative(legacyAir);
+			dedicatedAccountUpdateInformations = new DedicatedAccountUpdateInformation[] { da6004, daCF0 };
+		} else {
+			dedicatedAccountUpdateInformations = new DedicatedAccountUpdateInformation[] { da6004 };
+		}
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS, dedicatedAccountUpdateInformations);
+		/* ---------- param for RUN-PAM ---------- */
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.BALANCE_TRANSFER);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.PACKAGE_ID, usmsPackage.getId());
+		log.debug("executing balance transfer with normal request: {}", cuculusRequest);
+	}
+
+	private void constructSpecialRequest(CuculusRequestImpl cuculusRequest, String amountAir, Float legacy,
+			String legacyAir, UsmsPackageCode usmsPackage) {
+		/* ---------- param for UBAD ---------- */
+		Map<String, Integer> tierTypeWithDaIdMap = CacheUtil.getBucketTypeWithDaIdMap(usmsPackage.getId());
+		Integer legacyDAID = tierTypeWithDaIdMap.get(USMSConstants.LEGACY_BUCKET_NAME);
+		DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformations = null;
+		if (Objects.nonNull(legacy) && legacy != 0.0f && Objects.nonNull(legacyDAID)) {
+			DedicatedAccountUpdateInformation daCF0 = new DedicatedAccountUpdateInformation(legacyDAID,
+					RequestUtil.getDedicatedAccountUnitType()).setAdjustmentAmountRelative(legacyAir);
+			dedicatedAccountUpdateInformations = new DedicatedAccountUpdateInformation[] { daCF0 };
+		}
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS, dedicatedAccountUpdateInformations);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.IS_SPECIAL_CUST, Boolean.TRUE);
+		cuculusRequest.putAuxiliaryRequestParameter(AuxRequestParam.AMOUNT, amountAir);
+		log.debug("executing balance transfer with special request: {}", cuculusRequest);
+	}
+
+}

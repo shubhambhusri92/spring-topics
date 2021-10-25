@@ -1,0 +1,21 @@
+package com.ericsson.smartmetering.domain;
+
+import javax.annotation.Generated;
+import javax.persistence.metamodel.SingularAttribute;
+import javax.persistence.metamodel.StaticMetamodel;
+
+@Generated(value = "org.hibernate.jpamodelgen.JPAMetaModelEntityProcessor")
+@StaticMetamodel(UsmsRefundHistory.class)
+public abstract class UsmsRefundHistory_ extends com.ericsson.smartmetering.domain.AbstractAuditingEntity_ {
+
+	public static volatile SingularAttribute<UsmsRefundHistory, String> reason;
+	public static volatile SingularAttribute<UsmsRefundHistory, Float> amount;
+	public static volatile SingularAttribute<UsmsRefundHistory, String> fromMeter;
+	public static volatile SingularAttribute<UsmsRefundHistory, Long> fromMsisdn;
+	public static volatile SingularAttribute<UsmsRefundHistory, Float> remainingBalance;
+	public static volatile SingularAttribute<UsmsRefundHistory, Long> id;
+	public static volatile SingularAttribute<UsmsRefundHistory, String> transactionId;
+	public static volatile SingularAttribute<UsmsRefundHistory, Boolean> fullAmount;
+
+}
+

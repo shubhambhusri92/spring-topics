@@ -1,0 +1,28 @@
+Spring Security - Custom User Registration with Spring Boot and Thymeleaf
+
+
+
+FAQ: Can you provide an example of user registration with Spring Boot and Thymeleaf? Also, how can we add support for additional fields such as email etc. Can we also store the information in the database using Hibernate?
+
+
+
+Answer:
+
+Yes, I have a code example for this scenario. Here's a screenshot of the registration form.
+
+Image (Follow this for directory)
+
+
+
+Source Code:
+
+bonus-code-spring-security-user-registration-custom-user-details-thymeleaf-spring-boot.zip
+
+
+
+The project includes a README.txt file. See this file for a high-level discussion of the code.
+
+This code is also based on a previous bonus lecture from the Security section. Please see this lecture for full details: Spring Security  - User Registration.(https://www.udemy.com/course/spring-hibernate-tutorial/learn/lecture/9552122)
+
+
+Enjoy!

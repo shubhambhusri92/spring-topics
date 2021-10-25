@@ -1,0 +1,5 @@
+package com.ericsson.smartmetering.service.dto;
+
+public class UsmsBalanceTransferSummaryDto {
+
+}

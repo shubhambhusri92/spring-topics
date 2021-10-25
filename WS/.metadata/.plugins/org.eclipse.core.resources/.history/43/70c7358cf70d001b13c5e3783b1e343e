@@ -1,0 +1,126 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Top Up Summary</title>
+    <style>
+            body {
+                font-size: 10px;
+                font-family: Roboto, "Helvetica Neue", sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            table > thead > tr.header_row {
+                height: 50px;
+                background: #33006f;
+                color: white;
+            }
+            tr.meter-number-row > th {
+                padding: 15px 0px;
+            }
+            tr > .receiptId,
+            tr > .topupAmount,
+            tr > .debtCleared,
+            tr > .actualTopupAmount,
+            tfoot > tr > th {
+                text-align: left;
+            }
+            tfoot > tr {
+                border-top: 2px solid;
+            }
+            .receiptId {
+                width: 90px;
+            }
+            .topupAmount {
+                width: 80px;
+            }
+            .source, .createdBy {
+                width: 90px;
+            }
+            .debtCleared, .actualTopupAmount, .modeOfPayment {
+                width: 130px;
+            }
+            .topupDate {
+                text-align: center;
+                width: 150px;
+            }
+            .site, .source, .createdBy, .modeOfPayment {
+                padding-left: 5px;
+            }
+            .company_logo {
+                width: 100px;
+            }
+            .logo_cell {
+                text-align: right;
+            }
+            .pdf_title {
+                text-align: left;
+                font-size: 22px;
+                font-family: Arial, sans-serif;
+                padding: 0 5px;
+            }
+    </style>
+</head>
+<body>
+<div>
+    <table>
+        <thead>
+        <tr class="header_row">
+            <th class="pdf_title" colspan="2">TOP UP SUMMARY</th>
+            <th class="logo_cell" colspan="5"><img class="company_logo" alt="company_logo" th:src="@{'data:image/jpeg;base64,'+${image}}"/></th>
+        </tr>
+        <tr class="meter-number-row">
+            <th colspan="1">METER NUMBER:</th>
+            <th colspan="6" th:text="${meterNumber}"></th>
+        </tr>
+        <tr>
+            <th class="topupDate">TOPUP DATE</th>
+            <th class="receiptId">RECEIPT ID</th>
+            <th class="createdBy">CREATED BY</th>
+            <th class="modeOfPayment">MODE OF PAYMENT</th>
+            <th class="topupAmount">TOPUP AMOUNT($)</th>
+            <th class="debtCleared">INITIAL CREDIT / DEBT CLEARED($)</th>
+            <th class="actualTopupAmount">ACTUAL TOPUP AMOUNT($)</th>
+            <!--<th class="id">ID</th>-->
+            <!--<th class="source">SOURCE</th>-->
+            <!--<th class="transactionId">TRANSACTION ID</th>-->
+            <!--<th class="meterNumber">METER NUMBER</th>-->
+            <!--<th class="previousBalance">PREVIOUS BALANCE</th>-->
+            <!--<th class="site">SITE</th>-->
+            <!--<th class="newBalance">NEW BALANCE</th>-->
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="topup, iter : ${topupHistory}">
+            <td class="topupDate" th:text="${topup.transactionDateTime}"/>
+            <td class="receiptId" th:text="${topup.originTransactionId}"/>
+            <td class="createdBy" th:text="${topup.userId}"/>
+            <td class="modeOfPayment" th:text="${topup.paymentMode}"/>
+            <td class="topupAmount" th:text="${topup.deltaAmount}"/>
+            <td class="debtCleared" th:text="${topup.deductedamount}"/>
+            <td class="actualTopupAmount" th:text="${topup.actualRechageAmount}"/>
+            <!--<td class="id" th:text="${iter.index + 1}"></td>-->
+            <!--<td class="source" th:text="${topup.originNodeId}"/>-->
+            <!--<td class="transactionId" th:text="${topup.cardTransactionId}"/>-->
+            <!--<td class="meterNumber" th:text="${topup.meterNumber}"/>-->
+            <!--<td class="previousBalance" th:text="${topup.balanceBefore}"/>-->
+            <!--<td class="site" th:text="${topup.siteName}"/>-->
+            <!--<td class="newBalance" th:text="${topup.balanceAfter}"/>-->
+        </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="4">TOTAL</th>
+                <th th:text="${#numbers.formatDecimal(#aggregates.sum(topupHistory.![deltaAmount]), 2, 2, 'POINT')}"></th>
+                <th th:text="${#numbers.formatDecimal(#aggregates.sum(topupHistory.![deductedamount]), 2, 2, 'POINT')}"></th>
+                <th th:text="${#numbers.formatDecimal(#aggregates.sum(topupHistory.![actualRechageAmount]), 2, 2, 'POINT')}"></th>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+</body>
+</html>

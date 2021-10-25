@@ -1,0 +1,108 @@
+import java.util.HashMap;
+import java.util.Map;
+
+interface C {
+	void putAuxiliaryRequestParameter(final String key, final Object value);
+}
+
+class B  implements C, Cloneable {
+	private String course;
+
+	public Map<String, Object> auxiliaryRequestParameters;
+	
+	@Override
+	public void putAuxiliaryRequestParameter(String key, Object value) {
+		if (auxiliaryRequestParameters == null) {
+			auxiliaryRequestParameters = new HashMap<String, Object>();
+		}
+		auxiliaryRequestParameters.put(key, value);
+	}
+
+	
+	public String getCourse() {
+		return course;
+	}
+
+	public void setCourse(String course) {
+		this.course = course;
+	}
+
+	@Override
+	public String toString() {
+		return "B [course=" + course + "]";
+	}
+
+
+	@Override
+	protected Object clone() throws CloneNotSupportedException {
+		// TODO Auto-generated method stub
+		return super.clone();
+	}
+}
+
+class A extends B implements Cloneable {
+	private String name;
+	private String roll;
+
+	public String getName() {
+		return name;
+	}
+
+	public A(String name, String roll) {
+		this.name = name;
+		this.roll = roll;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getRoll() {
+		return roll;
+	}
+
+	public void setRoll(String roll) {
+		this.roll = roll;
+	}
+
+	@Override
+	public String toString() {
+		return "A [name=" + name + ", roll=" + roll + "]";
+	}
+
+	@Override
+	protected A clone() throws CloneNotSupportedException {
+		// TODO Auto-generated method stub
+		return (A) super.clone();
+	}
+
+}
+
+public class Check {
+
+	public static void main(String[] args) throws Exception {
+		A a = new A("Shubham", "121");
+		a.setCourse(">NET");
+		a.putAuxiliaryRequestParameter("Key1", 1);
+		a.putAuxiliaryRequestParameter("Key2", 2);
+		System.out.println(a);
+
+		A a1 = a.clone();
+
+		a1.setName("Payal");
+		a1.setCourse("Java");
+
+		a1.putAuxiliaryRequestParameter("Key3", "3");
+		System.out.println(a1);
+
+		System.out.println(a);
+
+		System.out.println(a.getCourse());
+
+		System.out.println(a1.getCourse());
+		
+		System.out.println(a.auxiliaryRequestParameters);
+		
+		System.out.println(a1.auxiliaryRequestParameters);
+	}
+}

@@ -1,0 +1,13 @@
+Spring Security - User Registration Form with Custom Database Tables
+
+
+Question:
+
+I want to add registration module into spring security login demo application. How should I do this? I want to access registration page from Login page through hyperlink and after submit data into database.
+
+Answer
+
+I have a document that covers this. It performs user registration with custom user details with Spring Security using Hibernate. Custom user details include: user name, password, first name, last name and email. You can feel free to extend it with additional custom fields. Demo includes Hibernate, database support, encrypted passwords. The code uses Maven, all Java config (no xml) Hibernate configuration
+
+
+Follow bonus-code-spring-security-user-registration-custom-user-details.zip and bonus-lecture-spring-security-user-registration-custom-user  PDF

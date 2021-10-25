@@ -1,0 +1,14 @@
+Spring Security  and Thymeleaf
+
+Question:
+
+How would we convert spring-security-user-registration-custom-user-code to use Thymeleaf instead of JSP?
+
+
+Answer
+
+Here is the source code for this:
+
+- Non-Spring Boot version folder : bonus-code-spring-security-user-registration-custom-user-details-thymeleaf.zip
+
+- Spring Boot version folder : bonus-code-spring-security-user-registration-custom-user-details-thymeleaf-spring-boot.zip

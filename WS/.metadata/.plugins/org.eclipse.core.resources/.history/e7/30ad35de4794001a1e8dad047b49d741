@@ -1,0 +1,1681 @@
+package com.ericsson.smartmetering.service.impl;
+
+import com.ericsson.smartmetering.commands.Command;
+import com.ericsson.smartmetering.commands.CommandResponse;
+import com.ericsson.smartmetering.commands.executor.CommandExecutorService;
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.config.ValueConstant;
+import com.ericsson.smartmetering.domain.*;
+import com.ericsson.smartmetering.domain.enumeration.*;
+import com.ericsson.smartmetering.model.*;
+import com.ericsson.smartmetering.repository.*;
+import com.ericsson.smartmetering.request.DedicatedAccountUpdateInformation;
+import com.ericsson.smartmetering.request.impl.CuculusRequestImpl;
+import com.ericsson.smartmetering.service.*;
+import com.ericsson.smartmetering.service.dto.*;
+import com.ericsson.smartmetering.service.mapper.*;
+import com.ericsson.smartmetering.service.util.*;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+import com.ericsson.smartmetering.web.rest.util.SelfcareUtility;
+import com.ericsson.smartmetering.web.rest.vm.WaterAddressModal;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.crossstore.ChangeSetPersister;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+//import com.ericsson.smartmetering.repository.search.UsmsContractSearchRepository;
+
+/**
+ * Service Implementation for managing UsmsContract.
+ */
+@Service
+@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+public class UsmsContractServiceImpl implements UsmsContractService {
+
+	private final Logger LOGGER = LoggerFactory.getLogger(UsmsContractServiceImpl.class);
+
+	@Value("${meter.image.path}")
+	private String imageFilePath;
+
+	@Autowired
+	private UsmsContractRepository usmsContractRepository;
+
+	@Autowired
+	private UsmsCustomerRepository usmsCustomerRepository;
+
+	private final UsmsContractMapper usmsContractMapper;
+
+	private final UsmsPackageCodeMapper usmsPackageCodeMapper;
+
+	private final AddressToPaymentResponsibleMapper addressToPaymentResponsibleMapper;
+
+	private final UsmsCustomerService usmsCustomerService;
+
+	@Autowired
+	private UsmsPaymentResponsibleRepository usmsPaymentResponsibleRepository;
+
+	@Autowired
+	private UsmsContractDebtRepository contractDebtRepository;
+
+	private final ContractOverviewMapper contractOverviewMapper;
+
+	private final UsmsWorkOrderService usmsLeadService;
+
+	private final SelfcareUtility selfcareUtility;
+
+	private final CommandExecutorService commandExecutorService;
+
+	@Autowired
+	private UsmsMeterRepository usmsMeterRepository;
+
+	@Autowired
+	private UsmsKampongRepository usmsKampongRepository;
+
+	@Autowired
+	private UsmsServiceProviderRepository usmsServiceProviderRepository;
+
+	/**
+	 * The usms work order repository.
+	 */
+	@Autowired
+	private UsmsWorkOrderRepository usmsWorkOrderRepository;
+
+	@Autowired
+	private UsmsPackageCodeRepository packageCodeRepository;
+
+	/**
+	 * The sms service.
+	 */
+	private final NotificationService notificationService;
+
+	private final UsmsMeterService usmsMeterService;
+
+	private final UsmsBucketDetailsService usmsBucketDetailsService;
+	private final UsmsBucketContractMappingService usmsBucketContractMappingService;
+	private final UsmsMeterReadingService usmsMeterReadingService;
+
+	private final InstantUtil instantUtil;
+
+	@Autowired
+	private UsmsKawasanRepository usmsKawasanRepository;
+
+	@Autowired
+	private UsmsKawasanBukuMappingRepository kawasanBukuMappingRepository;
+
+	@Autowired
+	private UsmsMeterMasterRepository meterMasterRepository;
+
+	@Autowired
+	private UsmsWorkOrderRepository workOrderRepository;
+
+	private final MailService mailService;
+	private final UsmsLeadMapper usmsLeadMapper;
+	private final MessageSourceUtil messageSourceUtil;
+
+	public UsmsContractServiceImpl(UsmsContractMapper usmsContractMapper, UsmsPackageCodeMapper usmsPackageCodeMapper,
+			AddressToPaymentResponsibleMapper addressToPaymentResponsibleMapper,
+			UsmsCustomerService usmsCustomerService, ContractOverviewMapper contractOverviewMapper,
+			UsmsWorkOrderService usmsLeadService, SelfcareUtility selfcareUtility,
+			NotificationService notificationService, CommandExecutorService commandExecutorService,
+			UsmsMeterService usmsMeterService, UsmsBucketDetailsService usmsBucketDetailsService,
+			UsmsBucketContractMappingService usmsBucketContractMappingService,
+			UsmsMeterReadingService usmsMeterReadingService, InstantUtil instantUtil, MailService mailService,
+			UsmsLeadMapper usmsLeadMapper, MessageSourceUtil messageSourceUtil) {
+		this.usmsContractMapper = usmsContractMapper;
+		this.usmsPackageCodeMapper = usmsPackageCodeMapper;
+		this.addressToPaymentResponsibleMapper = addressToPaymentResponsibleMapper;
+		this.usmsCustomerService = usmsCustomerService;
+		this.contractOverviewMapper = contractOverviewMapper;
+		this.usmsLeadService = usmsLeadService;
+		this.selfcareUtility = selfcareUtility;
+		this.commandExecutorService = commandExecutorService;
+		this.notificationService = notificationService;
+		this.usmsMeterService = usmsMeterService;
+		this.usmsBucketDetailsService = usmsBucketDetailsService;
+		this.usmsBucketContractMappingService = usmsBucketContractMappingService;
+		this.usmsMeterReadingService = usmsMeterReadingService;
+		this.instantUtil = instantUtil;
+		this.mailService = mailService;
+		this.usmsLeadMapper = usmsLeadMapper;
+		this.messageSourceUtil = messageSourceUtil;
+	}
+
+	/**
+	 * Save a usmsContract.
+	 *
+	 * @param usmsContractDTO the entity to save
+	 * @return the persisted entity
+	 */
+	@Override
+	public UsmsContractDTO save(UsmsContractDTO usmsContractDTO) {
+		LOGGER.debug("Request to save UsmsContract : {}", usmsContractDTO);
+
+		UsmsContract usmsContract = usmsContractMapper.toEntity(usmsContractDTO);
+		usmsContract = usmsContractRepository.save(usmsContract);
+		return usmsContractMapper.toDto(usmsContract);
+	}
+
+	/**
+	 * Save a usmsContract.
+	 *
+	 * @param account
+	 * @return the persisted entity
+	 * @throws SmartMeteringException
+	 */
+	@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+	@Override
+	public List<CustomerTree> save(AccountModel account, UsmsUser user) throws SmartMeteringException {
+		LOGGER.debug("Request to save UsmsContract : {}", account);
+
+//        UsmsMeterDTO oldMeter = validateWorkorderMeter(account);
+
+//		method to check if active meter installed on customer for non faulty meter request (already handled on front-end)
+//		throwIfActiveMeterInstalled(account.getCustomerId(), account.getMeterType(), account.getWorkorderType());
+
+		// Update cust code if residential and commercial type.
+		Optional<UsmsCustomer> customer = setCustCode(account.getCustomerId());
+
+		UsmsContract usmsContract = createContract(account, customer);
+
+//        executeCommandsOnMeterOnBoarding(account, customer, usmsContract, oldMeter);
+
+		updateWorkOrderStatus(account.getWorkOrderId(), usmsContract);
+
+		return usmsCustomerService.createTreeFromList(Arrays.asList(customer.get().getCustParent(), customer.get()),
+				null, Arrays.asList(customer.get()), user);
+//        return usmsCustomerService.createTreeFromList(Arrays.asList(customer.get().getCustParent(), customer.get()),
+//                codes, Arrays.asList(customer.get()), user);
+	}
+
+	/**
+	 * check if active meter installed on customer for non faulty meter request
+	 *
+	 * @param customerId
+	 * @param meterType
+	 * @param workorderType
+	 * @throws SmartMeteringException if active meter already installed on site
+	 */
+	private void throwIfActiveMeterInstalled(Long customerId, MeterType meterType, WorkorderType workorderType)
+			throws SmartMeteringException {
+		if (!WorkorderType.FAULTY_METER.equals(workorderType)) {
+			UsmsCustomer customer = usmsCustomerRepository.getOne(customerId);
+			Optional<UsmsMeter> meter = usmsMeterRepository.findByUsmsCustomerAndStatusAndMeterType(customer,
+					MeterStatus.ACTIVE, meterType);
+			if (meter.isPresent())
+				throw new SmartMeteringException(ErrorMessage.ALREADY_EXIST, "Active meter");
+		}
+	}
+
+	/**
+	 * This method would update the workorder status to 'Close' once meter
+	 * onboarding done successfully.
+	 *
+	 * @param workorderId
+	 * @param usmsContract
+	 */
+	private void updateWorkOrderStatus(String workorderId, UsmsContract usmsContract) {
+		Instant currentDateTime = instantUtil.now();
+		// Processed lead
+		usmsLeadService.updateLeadStatus(ProspectStatus.CLOSE, workorderId, null, currentDateTime);
+
+		// This required to build tree from pre-populated data
+//        customer.get().getUsmsContracts().add(usmsContract);
+
+//        Set<String> codes = new HashSet<>();
+//        codes.add(customer.get().getCustParent().getCustCode());
+
+		// update customer status in selfcare
+		// selfcareUtility.changeCustomerStatus(CustomerStatus.ACTIVE,
+		// customer.get().getCustCode(), customer.get().getIcNumber(),
+		// customer.get().getSelfcareId());
+		// close workorder and notify selfcare
+
+		String meterNumber = usmsContract.getUsmsMeter().getMeterNumberPrefix() != null
+				? usmsContract.getUsmsMeter().getMeterNumberPrefix() + usmsContract.getUsmsMeter().getMeterNumber()
+				: usmsContract.getUsmsMeter().getMeterNumber();
+
+		selfcareUtility.updateWorkOrderStatusToSelfCare(meterNumber, usmsContract.getWorkOrderId(), "Completed",
+				currentDateTime);
+//        selfcareUtility.closeSelfcareStatusForWorkOrder(closeWorkOrderStatus);
+//        return codes;
+	}
+
+	/**
+	 * Method used to call external system and onboard meter
+	 *
+	 * @param workorderType type of workorder for which meter needs to onboard
+	 * @param newMeter      new meter details
+	 * @param address       installation address details
+	 * @param oldMeter      old meter details if workorder type is FAULTY
+	 * @param vendor
+	 * @throws SmartMeteringException
+	 */
+	private void executeCommandsOnMeterOnBoarding(WorkorderType workorderType, UsmsMeter newMeter, Address address,
+			Optional<UsmsMeter> oldMeter, String vendor) throws SmartMeteringException {
+		String electricMeterNumber = null;
+		if (MeterType.WATER.equals(newMeter.getMeterType())) {
+			Optional<UsmsMeter> electricMeter = usmsMeterRepository.findByUsmsCustomerAndStatusAndMeterType(
+					newMeter.getUsmsCustomer(), MeterStatus.ACTIVE, MeterType.ELECTRICITY);
+			if (electricMeter.isPresent()) {
+				electricMeterNumber = electricMeter.get().getMeterNumber();
+			}
+		}
+
+		CuculusRequestImpl request = createCuculusRequest(newMeter, address, electricMeterNumber, vendor);
+		request.setMeterCreatedDate(LocalDateTime.now());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.INACTIVE);
+
+		if (MeterType.WATER.equals(newMeter.getMeterType()))
+			waterMeterOnboarding(workorderType, newMeter, oldMeter, request);
+		else
+			try
+		{
+			electricMeterOnboarding(workorderType, newMeter, oldMeter, request);
+
+		}
+		
+		catch (CloneNotSupportedException ex) {
+			LOGGER.info("Exception Occured while cloning CuculusImpl. Object : {}", ex);
+		}
+		
+		if (!request.isRequestExecutedSuccessfully())
+			throw new SmartMeteringException(ErrorMessage.CUCULUS_FAILURE_RESPONSE, new Object[] {});
+
+	}
+
+	private void electricMeterOnboarding(WorkorderType workorderType, UsmsMeter newMeter, Optional<UsmsMeter> oldMeter,
+			CuculusRequestImpl request) throws CloneNotSupportedException {
+
+		CuculusRequestImpl pauseWaterRequest = request.clone();
+
+		if (WorkorderType.CHANGE_OF_OWNERSHIP.equals(workorderType)) {
+			commandExecutorService.execute(CommandMainTask.CHANGE_OWNERSHIP, request);
+		} else if (WorkorderType.NORMAL.equals(workorderType)) {
+			request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.TRUE);
+			commandExecutorService.execute(CommandMainTask.ELECTRIC_METER_ON_BOARDING, request);
+		} else if (WorkorderType.FAULTY_METER.equals(workorderType) && oldMeter.isPresent()) {
+			Optional<UsmsMeter> waterMeter = usmsMeterRepository.findByUsmsCustomerAndStatusAndMeterType(
+					newMeter.getUsmsCustomer(), MeterStatus.ACTIVE, MeterType.WATER);
+
+			UsmsMeter usmWtrMeter = null;
+			if (waterMeter.isPresent()) {
+				LOGGER.info("Found Water Meter Attached to the Electricity Meter");
+				usmWtrMeter = waterMeter.get();
+				checkMeterNumberForPrefix(usmWtrMeter.getMeterNumber(), usmWtrMeter.getMeterNumberPrefix(),
+						pauseWaterRequest, CommandMainTask.FAULTY_METER_UNINSTALL);
+
+				LOGGER.info("Pausing Water Meter : {}", usmWtrMeter.getMeterNumber());
+				commandExecutorService.execute(CommandMainTask.PAUSE_WATER_METER, pauseWaterRequest);
+
+			}
+
+			checkMeterNumberForPrefix(oldMeter.get().getMeterNumber(), oldMeter.get().getMeterNumberPrefix(), request,
+					CommandMainTask.FAULTY_METER_UNINSTALL);
+
+			commandExecutorService.execute(CommandMainTask.FAULTY_METER_UNINSTALL, request);
+
+			if ((!request.isRequestExecutedSuccessfully()) && Objects.isNull(usmWtrMeter))
+				commandExecutorService.initiateRollback(pauseWaterRequest, CommandDirection.ROLLBACK);
+
+			checkMeterNumberForPrefix(newMeter.getMeterNumber(), newMeter.getMeterNumberPrefix(), request,
+					CommandMainTask.FAULTY_METER_INSTALL);
+
+			commandExecutorService.execute(CommandMainTask.FAULTY_METER_INSTALL, request);
+
+			if (!(Objects.isNull(usmWtrMeter))) {
+				LOGGER.info("Unpausing Water Meter Number : {}", usmWtrMeter.getMeterNumber());
+				checkMeterNumberForPrefix(usmWtrMeter.getMeterNumber(), usmWtrMeter.getMeterNumberPrefix(),
+						pauseWaterRequest, CommandMainTask.FAULTY_METER_INSTALL);
+
+				commandExecutorService.execute(CommandMainTask.UNPAUSE_WATER_METER, pauseWaterRequest);
+			}
+		}
+	}
+
+	private void checkMeterNumberForPrefix(String meterNumber, String prefix, CuculusRequestImpl request,
+			CommandMainTask commandTask) {
+		if (StringUtils.hasText(prefix))
+			request.setMeterNumber(meterNumber.substring(prefix.length()));
+		else {
+			if (commandTask.equals(CommandMainTask.FAULTY_METER_UNINSTALL)) {
+				request.setMeterNumber(meterNumber);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.FALSE);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.INACTIVE);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_INVENTORY_STATE,
+						USMSConstants.UNINSTALLED);
+			} else if (commandTask.equals(CommandMainTask.FAULTY_METER_INSTALL)) {
+				request.setMeterNumber(meterNumber);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.TRUE);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.ACTIVE);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_INVENTORY_STATE, USMSConstants.INSTALLED);
+			}
+		}
+	}
+
+	private void waterMeterOnboarding(WorkorderType workorderType, UsmsMeter newMeter, Optional<UsmsMeter> oldMeter,
+			CuculusRequestImpl request) {
+		if (WorkorderType.CHANGE_OF_OWNERSHIP.equals(workorderType)) {
+			// TODO: Change of ownership changes
+		} else if (WorkorderType.NORMAL.equals(workorderType)) {
+			request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.TRUE);
+			commandExecutorService.execute(CommandMainTask.WATER_METER_ON_BOARDING, request);
+		} else if (WorkorderType.FAULTY_METER.equals(workorderType) && oldMeter.isPresent()) {
+			if (StringUtils.hasText(oldMeter.get().getMeterNumberPrefix()))
+				request.setMeterNumber(
+						oldMeter.get().getMeterNumber().substring(oldMeter.get().getMeterNumberPrefix().length()));
+			else
+				request.setMeterNumber(oldMeter.get().getMeterNumber());
+			request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.FALSE);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.INACTIVE);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_INVENTORY_STATE, USMSConstants.UNINSTALLED);
+			commandExecutorService.execute(CommandMainTask.FAULTY_WATER_METER_UNINSTALL, request);
+
+			if (StringUtils.hasText(newMeter.getMeterNumberPrefix()))
+				request.setMeterNumber(newMeter.getMeterNumber().substring(newMeter.getMeterNumberPrefix().length()));
+			else
+				request.setMeterNumber(newMeter.getMeterNumber());
+			request.putAuxiliaryRequestParameter(AuxRequestParam.COLLECT_DATA_FLAG, Boolean.TRUE);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.ACTIVE);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_INVENTORY_STATE, USMSConstants.INSTALLED);
+			commandExecutorService.execute(CommandMainTask.FAULTY_WATER_METER_INSTALL, request);
+		}
+	}
+
+	/**
+	 * This method would create a new contract for the meter and add payment
+	 * responsible for it.
+	 *
+	 * @param account
+	 * @param customer
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	private UsmsContract createContract(AccountModel account, Optional<UsmsCustomer> customer)
+			throws SmartMeteringException {
+		// Generate payment responsible from customer.
+		UsmsPaymentResponsible paymentResponsible = getPaymentResponsible(customer);
+
+		// Generate contract from account model and fill remaining entries.
+		UsmsContract usmsContract = getUsmsContractFromAccount(account,
+				customer.get().getUsmsInstallationAddress().getUsmsKampong().getPostCode())
+						.paymentResponsible(paymentResponsible);
+
+		/*
+		 * ?<<<<<<< HEAD // update customer status in selfcare //
+		 * selfcareUtility.changeCustomerStatus(CustomerStatus.ACTIVE,
+		 * customer.get().getCustCode(), customer.get().getIcNumber(),
+		 * customer.get().getSelfcareId()); // close workorder and notify selfcare
+		 *
+		 * CloseWorkOrderStatus closeWorkOrderStatus=new CloseWorkOrderStatus(); Date
+		 * closeWorkorderDate = Date.from(currentDateTime);
+		 * closeWorkOrderStatus.setWOCloseDate(new
+		 * SimpleDateFormat("dd-MM-yyyy HH:mm:ss").format(closeWorkorderDate));
+		 * closeWorkOrderStatus.setWORefNo(account.getWorkOrderId());
+		 * closeWorkOrderStatus.setDateTime(instantUtil.now());
+		 * closeWorkOrderStatus.setTransactionNumber(RequestUtil.getTransactionId());
+		 * closeWorkOrderStatus.setTransactionType("closeWorkOrder");
+		 * closeWorkOrderStatus.setOriginHostName("CRM");
+		 * //selfcareUtility.closeSelfcareStatusForWorkOrder(closeWorkOrderStatus);
+		 * =======
+		 */
+		// Save entire relationship
+		usmsContract = usmsContractRepository.save(usmsContract);
+
+		// Update contract number with-in same session
+		usmsContract.setContractNumber(String.format(USMSConstants.CONTRACT_CODE_FORMAT, account.getCompany(),
+				ZonedDateTime.now().getYear(), usmsContract.getId()));
+		return usmsContract;
+	}
+
+	/**
+	 * Validate every type of workorders and meter.
+	 *
+	 * @param account containing basic workorder and meter detail.
+	 * @throws SmartMeteringException
+	 */
+	private void validateWorkorderMeter(AccountModel account) throws SmartMeteringException {
+		LOGGER.debug("validating workorder type: {}", account.getWorkorderType());
+		if (WorkorderType.NORMAL.equals(account.getWorkorderType())) {
+			validateNormalWorkorderScenario(account);
+		} else if (WorkorderType.CHANGE_OF_OWNERSHIP.equals(account.getWorkorderType())) {
+			try {
+				valdiateOwnershipChangeWorkorderScenario(account);
+			} catch (ChangeSetPersister.NotFoundException e) {
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND, account.getNewMeterId());
+			}
+		} else if (WorkorderType.FAULTY_METER.equals(account.getWorkorderType())) {
+			try {
+				validateFaultyWorkorderScenario(account);
+			} catch (ChangeSetPersister.NotFoundException e) {
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND, account.getOldMeterId());
+			}
+		}
+	}
+
+	/**
+	 * Validate faulty meter workorder scenario and throw error if 1. Meter number
+	 * not exist 2. Meter number not in active state
+	 *
+	 * @param account
+	 * @throws SmartMeteringException
+	 * @throws ChangeSetPersister.NotFoundException
+	 */
+	private void validateFaultyWorkorderScenario(AccountModel account)
+			throws SmartMeteringException, ChangeSetPersister.NotFoundException {
+		LOGGER.debug("validating {} scenario with meterId: {}", account.getWorkorderType(), account.getOldMeterId());
+		Optional<UsmsMeter> usmsMeter = Optional
+				.ofNullable(usmsMeterRepository.findByMeterNumber(account.getOldMeterId())).map(Collection::stream)
+				.orElseThrow(ChangeSetPersister.NotFoundException::new)
+				.peek(meter -> LOGGER.debug("meter found for meter number: {}", meter))
+				.filter(meter -> MeterStatus.ACTIVE.equals(meter.getStatus())).findAny();
+		// usmsMeter should not be empty
+		// empty means no active meter exists
+		if (!usmsMeter.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE, account.getOldMeterId());
+	}
+
+	/**
+	 * Validate change of ownership workorder scenario and throw error if 1. Meter
+	 * number not exist 2. Meter number not in inactive state
+	 *
+	 * @param account
+	 * @throws SmartMeteringException
+	 * @throws ChangeSetPersister.NotFoundException
+	 */
+	private void valdiateOwnershipChangeWorkorderScenario(AccountModel account)
+			throws SmartMeteringException, ChangeSetPersister.NotFoundException {
+		LOGGER.debug("validating {} scenario with meterId: {}", account.getWorkorderType(), account.getNewMeterId());
+		Optional<UsmsMeter> usmsMeter = Optional
+				.ofNullable(usmsMeterRepository.findByMeterNumber(account.getNewMeterId())).map(Collection::stream)
+				.orElseThrow(ChangeSetPersister.NotFoundException::new)
+				.peek(meter -> LOGGER.debug("meter found for meter number: {}", meter))
+				.filter(meter -> !MeterStatus.INACTIVE.equals(meter.getStatus())).findAny();
+		// usmsMeter should be empty
+		// non-empty means meter not in-active yet
+		if (usmsMeter.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_INACTIVE, account.getNewMeterId());
+	}
+
+	/**
+	 * Validate normal workorder scenario and throw error if 1. Any contract
+	 * associated with meter number is not in INACTIVE state.
+	 *
+	 * @param account
+	 * @throws SmartMeteringException
+	 */
+	private void validateNormalWorkorderScenario(AccountModel account) throws SmartMeteringException {
+		LOGGER.debug("validating {} scenario with meterId: {}", account.getWorkorderType(), account.getNewMeterId());
+		Optional<UsmsContract> usmsContract = Optional
+				.ofNullable(usmsContractRepository.findByUsmsMeterMeterNumber(account.getNewMeterId()))
+				.map(Collection::stream).orElseGet(Stream::empty)
+				.peek(contract -> LOGGER.debug("contract(s) associated with meter number: {}, is: {}",
+						account.getNewMeterId(), contract))
+				.filter(contract -> !ContractStatus.INACTIVE.equals(contract.getStatus()))
+				.peek(contract -> LOGGER.debug("active contract(s) associated with meter number: {}, is: {}",
+						account.getNewMeterId(), contract))
+				.findAny();
+		// contract should be empty
+		// non-empty means meter still in active state
+		if (usmsContract.isPresent())
+			throw new SmartMeteringException(ErrorMessage.ALREADY_EXIST, "Meter Number");
+	}
+
+	/**
+	 * This method would create UsmsContract on below scenarios - 1. When workOrder
+	 * request is Service. 2. When workOrder request is of change of ownership. 3.
+	 * When workOrder request is normal on new meter installation.
+	 *
+	 * @param account
+	 * @param custZipCode
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	private UsmsContract getUsmsContractFromAccount(AccountModel account, String custZipCode)
+			throws SmartMeteringException {
+
+		UsmsContract usmsContract = null;
+		boolean isChangeOwnershipReq = false;
+		UsmsMeter existingMeter = null;
+		HashSet<UsmsMeter> usmsMeterSet = new HashSet<>();
+		Long oldMsisdn = null;
+
+		LOGGER.debug("Service Request type: {}", account.getWorkorderType());
+
+		if (account.getWorkorderType() == WorkorderType.FAULTY_METER) {
+
+			oldMsisdn = handleServiceRequest(account.getOldMeterId(), false);
+		} else if (account.getWorkorderType() == WorkorderType.CHANGE_OF_OWNERSHIP) {
+
+			isChangeOwnershipReq = true;
+			boolean isMeterInactive = false;
+			List<UsmsMeter> meterList = usmsMeterRepository.findByMeterNumber(account.getNewMeterId());
+			LOGGER.debug("meter: {} found against meter number: {}", meterList, account.getNewMeterId());
+
+			if (CollectionUtils.isEmpty(meterList))
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Meter");
+
+			Optional<UsmsMeter> usmsMeterOpt = meterList.stream().filter(mtr -> mtr.getStatus() == MeterStatus.INACTIVE)
+					.findFirst();
+
+			/*
+			 * if (!usmsMeterOpt.isPresent()) throw new
+			 * SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE, "for msisdn " +
+			 * account.getNewMeterId() + " ");
+			 */
+
+			if (usmsMeterOpt.isPresent()) {
+				existingMeter = usmsMeterOpt.get();
+				isMeterInactive = existingMeter == null ? false
+						: existingMeter.getStatus().compareTo(MeterStatus.INACTIVE) == 0;
+			}
+
+			if (!isMeterInactive) {
+				throw new SmartMeteringException(ErrorMessage.INVALID_METER_NUMBER_OR_NOT_INACTIVE);
+			}
+			usmsMeterSet.add(existingMeter);
+		}
+
+		usmsContract = new UsmsContract().status(ContractStatus.ACTIVE).activeDate(instantUtil.now())
+				.usmsPackage(usmsPackageCodeMapper.fromId(account.getPackId())).workOrderId(account.getWorkOrderId())
+				.imsi(account.getImsi()).usmsCustomer(new UsmsCustomer(account.getCustomerId()))
+				.remarks(account.getRemarks())
+//                .usmsMeters(usmsMeterSet)
+		;
+
+		if (usmsContract != null && !isChangeOwnershipReq) {
+			// Generate meter from account model
+			UsmsMeter usmsMeter = getUsmsMeterFromAccount(account, custZipCode, oldMsisdn);
+
+			// Add new meter to contract
+//            usmsContract.getUsmsMeters().add(usmsMeter);
+		} else if (isChangeOwnershipReq) {
+			existingMeter.activeDate(instantUtil.now()).creditLimit(0.0f).requestId(0L)
+					.prevMeterId(account.getOldMeterId()).status(MeterStatus.NEW)
+					.usmsServiceProvider(new UsmsServiceProvider(account.getCompany()))
+					.prevMeterReading(account.getOldMeterReading()).deactivateDate(null)
+					.initialMeterReading(account.getInitialMeterReading())
+					.usmsCustomer(new UsmsCustomer(account.getCustomerId()));
+		}
+
+		return usmsContract;
+	}
+
+	/**
+	 * Method to inactive contract and meter instance for Faulty Meter request.
+	 *
+	 * @param oldMeterId
+	 * @param makeFaulty
+	 * @return pk of faulty meter instance
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	private Long handleServiceRequest(String oldMeterId, boolean makeFaulty) throws SmartMeteringException {
+		Optional<UsmsMeter> meter = Optional.ofNullable(usmsContractRepository.findByUsmsMeterMeterNumber(oldMeterId))
+				.map(Collection::stream).orElseGet(Stream::empty)
+				// total contracts from database
+				.peek(contract -> LOGGER.debug("contract associated to meter number: {}, contract: {}", oldMeterId,
+						contract))
+				// filter out all inactive instances
+				.filter(contract -> !ContractStatus.INACTIVE.equals(contract.getStatus()))
+				.peek(contract -> LOGGER.debug("found active contract : {}", contract))
+				// inactive contract and meter instance
+				.map(contract -> makeFaulty
+						? contract.isDeleted(Boolean.TRUE).status(ContractStatus.INACTIVE).getUsmsMeter()
+								.isDeleted(Boolean.TRUE).deactivateDate(instantUtil.now()).status(MeterStatus.FAULTY)
+						: contract.getUsmsMeter())
+				.peek(usmsMeter -> LOGGER.debug("faulty meter instance is: {}", usmsMeter))
+				// returning faulty meter instance id
+				.findFirst();
+//        UsmsMeterMaster meterMaster = meterMasterRepository.findByMeterNumber(account.getOldMeterId());
+//        if (meterMaster != null)
+//            meterMaster.setStatus(MeterMasterStatus.FAULTY);
+		if (meter.isPresent())
+			return meter.get().getMsisdn();
+		else
+			throw new SmartMeteringException("Cannot find meter associated to meter number: " + oldMeterId,
+					USMSConstants.ACCOUNT_DELETED_ERROR_CODE);
+	}
+
+	private UsmsMeter getUsmsMeterFromAccount(AccountModel account, String custZipCode, Long oldMsisdn)
+			throws SmartMeteringException {
+		Long msisdn = oldMsisdn;
+		if (msisdn == null)
+			msisdn = usmsContractRepository.meterNumberSequence();
+
+		LOGGER.debug("generate meter from account info with old msisdn: {} and new msisdn: {}", oldMsisdn, msisdn);
+
+		return new UsmsMeter().activeDate(instantUtil.now()).creditLimit(0.0f).requestId(0L).status(MeterStatus.NEW)
+				.msisdn(msisdn).meterType(account.getMeterType()).prevMeterId(account.getOldMeterId())
+				.meterNumber(account.getMeterPrefix() != null ? account.getMeterPrefix() + account.getNewMeterId()
+						: account.getNewMeterId()) // if company not null then append it in meter number
+				.meteringPoint(custZipCode + USMSConstants.UNDERSCORE + account.getCustomerId()
+						+ USMSConstants.UNDERSCORE + account.getMeterType().name().charAt(0))
+				.kvaUnit(account.getKvaUnit()).prevMeterReading(account.getOldMeterReading())
+				.longitude(account.getLongitude()).latitude(account.getLatitude())
+				.initialMeterReading(account.getInitialMeterReading())
+				.usmsServiceProvider(new UsmsServiceProvider(account.getCompany()))
+				.usmsCustomer(new UsmsCustomer(account.getCustomerId())).meterPhase(account.getMeterPhase())
+				.meterNumberPrefix(account.getMeterPrefix())
+//				.usmsKawasanBukuMapping(
+//						account.getKawasanId() != null && account.getBukuId() != null
+//								? kawasanBukuMappingRepository.getOne(
+//										new UsmsKawasanBukuMappingId(account.getKawasanId(), account.getBukuId()))
+//								: null)
+				.parentMeter(getParentMeter(account));
+	}
+
+	private UsmsMeter getParentMeter(AccountModel account) throws SmartMeteringException {
+		UsmsMeter parentMeter = null;
+		if (StringUtils.hasText(account.getParentMeterNumber())) {
+			Optional<UsmsMeter> meterOpt = null;
+			try {
+				meterOpt = Optional.ofNullable(usmsMeterRepository.findByMeterNumber(account.getParentMeterNumber()))
+						.map(Collection::stream).orElseThrow(ChangeSetPersister.NotFoundException::new)
+						.peek(meter -> LOGGER.debug("meter: {} found against meter number: {}", meter,
+								account.getParentMeterNumber()))
+						.filter(meter -> MeterStatus.ACTIVE.equals(meter.getStatus()))
+						.peek(meter -> LOGGER.debug("active meter: {} found against meter number: {}", meter,
+								account.getParentMeterNumber()))
+						.findAny();
+			} catch (ChangeSetPersister.NotFoundException e) {
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND,
+						"meter number " + account.getParentMeterNumber());
+			}
+			if (!meterOpt.isPresent())
+				throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE,
+						"for msisdn " + account.getParentMeterNumber() + " ");
+			parentMeter = meterOpt.get();
+		}
+		return parentMeter;
+	}
+
+	private UsmsContractDebt getContractDebtFromDebtModel(DebtModel debtModel, UsmsContract usmsContract) {
+		return new UsmsContractDebt()// .debtAmount(debtModel.getDebtAmount())
+				.debtClearingMethod(debtModel.getDebtClearanceMethod())
+				.debtClearingPeriod(debtModel.getDebtClearingPeriod()).deductionAmount(debtModel.getDeductionAmount())
+				.isValid(Boolean.TRUE).usmsContract(usmsContract);
+	}
+
+	private Optional<UsmsCustomer> setCustCode(Optional<UsmsCustomer> customer) {
+		LOGGER.debug("getting customer: {}", customer.isPresent());
+		if (customer.isPresent()) {
+			UsmsCustomer cust = customer.get();
+			LOGGER.debug("adding cust code for customer: {}", cust);
+			if (!StringUtils.hasText(cust.getCustCode())) {
+				String parentCC = null;
+				Long childCount = 1L;
+				// sub account AccountNumber if not exist
+				cust.setAccountNumber(cust.getUsmsInstallationAddress().getUsmsKampong().getPostCode()
+						+ String.valueOf(cust.getId()).substring(5));
+				if (!StringUtils.hasText(cust.getCustParent().getCustCode())) {
+					LOGGER.debug("adding cust code for MA customer: {}", cust.getCustParent());
+					Specification<UsmsCustomer> spec = UsmsCustomerSpecs.getMainAccountCustomerCount();
+					Long custWithMainAcc = usmsCustomerRepository.count(spec);
+					custWithMainAcc = custWithMainAcc != null ? custWithMainAcc + 1 : 1;
+					parentCC = USMSConstants.CUST + USMSConstants.DOT + cust.getUsmsApplicantType().getId()
+							+ USMSConstants.DOT + custWithMainAcc;
+					cust.getCustParent().setCustCode(parentCC);
+					cust.getCustParent().setStatus(CustomerStatus.ACTIVE);
+					cust.getCustParent().setActivationDate(instantUtil.now());
+					cust.getCustParent().setStatusChangeDate(instantUtil.now());
+					// main account AccountNumber if not exist
+					cust.getCustParent().setAccountNumber(
+							cust.getCustParent().getUsmsMainAccountAddress().getUsmsKampong().getPostCode()
+									+ String.valueOf(cust.getCustParent().getId()).substring(5));
+				} else {
+					LOGGER.debug("adding cust code for SA customer: {}", cust);
+					parentCC = cust.getCustParent().getCustCode();
+					childCount = usmsCustomerRepository
+							.countByCustParentIdAndCustCodeNotNull(cust.getCustParent().getId()) + 1;
+				}
+				cust.setCustCode(parentCC + USMSConstants.DOT + childCount);
+				cust.setStatus(CustomerStatus.ACTIVE);
+				cust.setActivationDate(instantUtil.now());
+				cust.setStatusChangeDate(instantUtil.now());
+				usmsCustomerRepository.save(cust);
+			}
+		}
+		return customer;
+	}
+
+	private Optional<UsmsCustomer> setCustCode(Long customerId) {
+		Optional<UsmsCustomer> customer = usmsCustomerRepository.findById(customerId);
+		return setCustCode(customer);
+	}
+
+	private UsmsPaymentResponsible getPaymentResponsible(Optional<UsmsCustomer> customer) {
+
+		LOGGER.debug("Entered:: UsmsContractServiceImpl:: getPaymentResponsible");
+		UsmsPaymentResponsible paymentResponsible = null;
+		if (customer.isPresent()) {
+			paymentResponsible = usmsPaymentResponsibleRepository
+					.findByUsmsCustomerIdAndDeactivationDateNull(customer.get().getId());
+			if (paymentResponsible == null) {
+				UsmsCustomer parent = customer.get().getCustParent();
+				if (parent != null) {
+					Address address = null;
+					if (null != parent.getUsmsInstallationAddress()) {
+						address = parent.getUsmsInstallationAddress();
+					} else {
+						address = parent.getUsmsMainAccountAddress();
+					}
+
+					LOGGER.debug("is Address taken from Installation Account: {}",
+							null != parent.getUsmsInstallationAddress());
+					LOGGER.info("IC Number on payment responsible -{}", parent.getIcNumber());
+					paymentResponsible = addressToPaymentResponsibleMapper.toDto(address);
+					paymentResponsible.usmsCustomer(customer.get()).seq(1).activationDate(instantUtil.now())
+							.icNumber(parent.getIcNumber()).setPaymentResponsibleType(PaymentResponsibleType.OWNER);
+				}
+			}
+		}
+		LOGGER.debug("Exit:: UsmsContractServiceImpl:: getPaymentResponsible");
+		return paymentResponsible;
+	}
+
+	/**
+	 * Get all the usmsContracts.
+	 *
+	 * @return the list of entities
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<UsmsContractDTO> findAll() {
+		LOGGER.debug("Request to get all UsmsContracts");
+		return usmsContractRepository.findAll().stream().map(usmsContractMapper::toDto)
+				.collect(Collectors.toCollection(LinkedList::new));
+	}
+
+	/**
+	 * Get one usmsContract by customerId.
+	 *
+	 * @param customerId the id of the customer entity
+	 * @return the entity
+	 * @throws SmartMeteringException
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public ContractOverviewModel findOne(Long customerId, Optional<Long> meterId) throws SmartMeteringException {
+		LOGGER.debug("Request to get UsmsContract: {}, meterId: {}", customerId, meterId);
+		List<UsmsContract> contracts = null;
+		if (meterId != null && meterId.isPresent() && meterId.get() > 0)
+			contracts = usmsContractRepository.findByUsmsMeterId(usmsMeterRepository.getOne(meterId.get()));
+		else
+			contracts = usmsContractRepository.findByUsmsCustomerIdAndIsDeletedOrderByIdDesc(customerId, Boolean.FALSE);
+
+		LOGGER.debug("Total Contracts for customer: {}, and meter: {} is: {}", customerId, meterId, contracts);
+		if (!contracts.isEmpty())
+			for (UsmsContract contract : contracts)
+				if (contract.getStatus() != ContractStatus.INACTIVE)
+					return getContractModel(contract);
+		return null;
+	}
+
+	/**
+	 * This method would map {@link UsmsContract} object to
+	 * {@link ContractOverviewModel}. And set postcode related details in model
+	 * object.
+	 *
+	 * @param contract
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	private ContractOverviewModel getContractModel(UsmsContract contract) throws SmartMeteringException {
+		LOGGER.debug("Entered :: UsmsContractServiceImpl :: getContractModel");
+		ContractOverviewModel contractOverview = contractOverviewMapper.toDto(contract);
+
+		if (contractOverview != null) {
+			try {
+				String zipCode = contractOverview.getZip();
+				UsmsKampong usmsKampong = null;
+				if (zipCode != null) {
+					usmsKampong = usmsKampongRepository.findKampongByPostCode(zipCode);
+					contractOverview.setKampongId(usmsKampong.getId());
+					contractOverview.setKampongName(usmsKampong.getName());
+					contractOverview.setMukimName(usmsKampong.getUsmsMukim().getName());
+					contractOverview.setDistrict(usmsKampong.getUsmsMukim().getUsmsDistrict().getStateCode());
+				}
+				zipCode = contractOverview.getPrZip();
+				if (zipCode != null) {
+					usmsKampong = usmsKampongRepository.findKampongByPostCode(zipCode);
+					contractOverview.setPrKampongId(usmsKampong.getId());
+					contractOverview.setPrKampongName(usmsKampong.getName());
+					contractOverview.setPrMukimName(usmsKampong.getUsmsMukim().getName());
+					contractOverview.setPrDistrict(usmsKampong.getUsmsMukim().getUsmsDistrict().getStateCode());
+				}
+
+				if (contract != null && contract.getUsmsMeter() != null) {
+					UsmsMeter usmsMeter = contract.getUsmsMeter();
+					LOGGER.info("usmsMeter for contract overview::" + usmsMeter);
+					if (!usmsMeter.getStatus().equals(MeterStatus.INACTIVE)
+							&& usmsMeter.getMeterType().equals(MeterType.WATER)) {
+						LOGGER.info("meter is not inactive and is water type");
+						if (usmsMeter.getUsmsKawasanBukuMapping() != null) {
+							LOGGER.info("kawasan buku mapping is:: {}", usmsMeter.getUsmsKawasanBukuMapping());
+							UsmsBuku buku = usmsMeter.getUsmsKawasanBukuMapping().getUsmsBuku();
+							UsmsKawasan kawasan = usmsMeter.getUsmsKawasanBukuMapping().getUsmsKawasan();
+							UsmsZone zone = usmsMeter.getUsmsKawasanBukuMapping().getUsmsZone();
+							contractOverview.setWaterAddress(new WaterAddressModal(buku.getName(), kawasan.getName(),
+									zone.getName(), zone.getUsmsDistrict().getStateCode(), buku.getId(),
+									kawasan.getId(), zone.getId(), zone.getUsmsDistrict().getId()));
+						}
+					}
+					Map<String, List<String>> map = ApplicationUtil.getUploadedDocuments(usmsMeter.getMeterType(),
+							contract.getUsmsCustomer().getId(), imageFilePath);
+					String arr[] = map.get(USMSConstants.OTHER)
+							.toArray(new String[map.get(USMSConstants.OTHER).size()]);
+					if (MeterType.ELECTRICITY.equals(usmsMeter.getMeterType()))
+						contractOverview.setElectricityDocuments(arr);
+					else
+						contractOverview.setWaterDocuments(arr);
+
+					// get PaymentResponsible doc
+					try {
+						Path paymentResponsiblesPath = Paths.get(imageFilePath)
+								.resolve(contract.getUsmsCustomer().getId().toString().concat(File.separator)
+										.concat(USMSConstants.PAYMENT_RESPONSIBLES).concat(File.separator)
+										.concat(contract.getPaymentResponsible().getId().toString())
+										.concat(File.separator));
+						if (paymentResponsiblesPath.toFile().exists()) {
+							Files.list(paymentResponsiblesPath).filter(Files::isRegularFile).forEach(file -> {
+//                                    /pr/{customerId}/{paymentResponsibleId}/{name}
+								if (file.toFile().getName().startsWith(USMSConstants.RENT_AGREEMENT))
+									contractOverview.setPaymentResponsibleDoc(
+											"api/resource/pr/" + contract.getUsmsCustomer().getId()
+													+ USMSConstants.FORWARD_SLASH + contractOverview.getPrId()
+													+ USMSConstants.FORWARD_SLASH + file.toFile().getName());
+								else if (file.toFile().getName().startsWith(USMSConstants.IC))
+									contractOverview.setPaymentResponsibleIC(
+											"api/resource/pr/" + contract.getUsmsCustomer().getId()
+													+ USMSConstants.FORWARD_SLASH + contractOverview.getPrId()
+													+ USMSConstants.FORWARD_SLASH + file.toFile().getName());
+							});
+						}
+					} catch (Exception e) {
+						LOGGER.error("Error getting payment responsible doc: {}", e);
+					}
+
+				}
+			} catch (Exception excep) {
+				LOGGER.error("Error on setting postcode details in the Contract overview model.: {}", excep);
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Kampong");
+			}
+		}
+		LOGGER.debug("Exit :: UsmsContractServiceImpl :: getContractModel");
+		return contractOverview;
+	}
+
+	/**
+	 * Delete the usmsContract by id.
+	 *
+	 * @param id the id of the entity
+	 */
+	@Override
+	public void delete(Long id) {
+		LOGGER.debug("Request to delete UsmsContract : {}", id);
+		usmsContractRepository.deleteById(id);
+	}
+
+	/**
+	 * Search for the usmsContract corresponding to the query.
+	 *
+	 * @param query the query of the search
+	 * @return the list of entities
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<UsmsContractDTO> search(String query) {
+		LOGGER.debug("Request to search UsmsContracts for query {}", query);
+		// return StreamSupport
+		// .stream(usmsContractSearchRepository.search(queryStringQuery(query)).spliterator(),
+		// false)
+		// .map(usmsContractMapper::toDto)
+		// .collect(Collectors.toList());
+		return null;
+	}
+
+	@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+	@Override
+	public Optional<UsmsContract> addDebtDetails(DebtModel debtModel)
+			throws SmartMeteringException, NoSuchFieldException {
+
+		Optional<UsmsContract> contract = usmsContractRepository.findByContractNumber(debtModel.getContractId());
+
+		if (contract.isPresent()) {
+			UsmsContract usmsContract = contract.get();
+			usmsContract.getPaymentResponsible().toString();
+			UsmsMeter meter = null;
+			UsmsMeter mtr = usmsContract.getUsmsMeter();
+			if (mtr.getStatus() == MeterStatus.NEW) {
+				mtr.setStatus(MeterStatus.ACTIVE);
+				meter = mtr;
+			}
+
+			// Sending Meter Activation Request
+			CuculusRequestImpl request = createCuculusRequest(meter,
+					usmsContract.getUsmsCustomer().getUsmsInstallationAddress(), meter.getMeterNumber(), null);
+
+			addDebtDetails(debtModel, usmsContract, request);
+
+			setAuxParamOnMeterActivation(usmsContract, meter, request);
+
+			executeCommandOnMeterActivation(debtModel.getWorkorderType(), usmsContract, meter, request);
+
+			// Close lead
+			usmsLeadService.updateLeadStatus(ProspectStatus.COMPLETED, contract.get().getWorkOrderId(),
+					debtModel.getRemarks(), instantUtil.now());
+		}
+		return contract;
+	}
+
+	/**
+	 * This method would execute commands on meter activation in Meter installation,
+	 * faulty meter installation and change of ownership.
+	 *
+	 * @param workorderType
+	 * @throws SmartMeteringException
+	 */
+	private void executeCommandOnMeterActivation(WorkorderType workorderType, UsmsContract usmsContract,
+			UsmsMeter meter, CuculusRequestImpl request) throws SmartMeteringException {
+		if (WorkorderType.NORMAL.equals(workorderType) && MeterType.WATER.equals(meter.getMeterType()))
+			waterMeterActivation(workorderType, usmsContract, meter, request);
+		else
+			electricMeterActivation(workorderType, usmsContract, meter, request);
+	}
+
+	private void electricMeterActivation(WorkorderType workorderType, UsmsContract usmsContract, UsmsMeter meter,
+			CuculusRequestImpl request) throws SmartMeteringException {
+		LOGGER.info("executing electric meter activation for workorder type: {}, and meter number: {}", workorderType,
+				meter.getMeterNumber());
+		if (WorkorderType.NORMAL.equals(workorderType)) {
+			request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.METER_ACTIVATION);
+			commandExecutorService.execute(CommandMainTask.ELECTRIC_METER_ACTIVATION, request);
+		} else if (WorkorderType.FAULTY_METER.equals(workorderType)) {
+
+			commandExecutorService.execute(CommandMainTask.METER_ACTIVATION_FAULTY, request);
+		} else {
+			activationOnChangeOwnership(usmsContract, meter, request);
+		}
+		if (!request.isRequestExecutedSuccessfully())
+			throw new SmartMeteringException(ErrorMessage.CUCULUS_FAILURE_RESPONSE, USMSConstants.EMPTY);
+	}
+
+	private void waterMeterActivation(WorkorderType workorderType, UsmsContract usmsContract, UsmsMeter meter,
+			CuculusRequestImpl request) throws SmartMeteringException {
+		LOGGER.info("executing electric meter activation for workorder type: {}, and meter number: {}", workorderType,
+				meter.getMeterNumber());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.METER_ACTIVATION);
+		commandExecutorService.execute(CommandMainTask.WATER_METER_ACTIVATION, request);
+		if (!request.isRequestExecutedSuccessfully())
+			throw new SmartMeteringException(ErrorMessage.CUCULUS_FAILURE_RESPONSE, USMSConstants.EMPTY);
+	}
+
+	/**
+	 * This method would set aux parameters required for command execution in meter
+	 * activation.
+	 *
+	 * @param usmsContract
+	 * @param meter
+	 */
+	private void setAuxParamOnMeterActivation(UsmsContract usmsContract, UsmsMeter meter, CuculusRequestImpl request) {
+		Double kvaUnit = null;
+		if (meter.getKvaUnit() != null)
+			kvaUnit = meter.getKvaUnit();
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, meter.getMsisdn());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ACCUMULATOR_VALUE, kvaUnit);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ACCUMULATOR_ID, ValueConstant.ACCUMULATOR_ID);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, meter.getMeterType());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.ACTIVE);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_ID, meter.getId());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.PACKAGE_ID, usmsContract.getUsmsPackage().getId());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, meter.getMeterNumber());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUSTOMER_TYPE,
+				meter.getUsmsCustomer().getUsmsApplicantType().getApplicantTypeCode());
+	}
+
+	/**
+	 * This method would add debt details specified during meter activation.
+	 *
+	 * @param debtModel
+	 * @param usmsContract
+	 * @param request
+	 * @throws NoSuchFieldException
+	 */
+	private void addDebtDetails(DebtModel debtModel, UsmsContract usmsContract, CuculusRequestImpl request)
+			throws NoSuchFieldException {
+
+		DedicatedAccountUpdateInformation[] daInfo = null;
+		if (debtModel.getDebtClearanceMethod() != null) {
+
+			usmsContract.securityAmount(debtModel.getSecurityAmount())
+					.isNegativeAllowed(debtModel.getIsNegativeBalanceAllowed()).status(ContractStatus.ACTIVE)
+					.registrationAmount(debtModel.getRegistrationAmount());
+			UsmsContractDebt debt = getContractDebtFromDebtModel(debtModel, usmsContract);
+			contractDebtRepository.save(debt);
+
+			daInfo = CommandUtil.getDedicatedAccountUpdateInformations(debt.getDebtClearingMethod(), null);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS, daInfo);
+		}
+	}
+
+	/**
+	 * This method would execute commands on meter activation at change of ownership
+	 * use case.
+	 *
+	 * @param usmsContract
+	 * @param meter
+	 * @param request
+	 * @throws SmartMeteringException
+	 */
+	@SuppressWarnings("rawtypes")
+	private void activationOnChangeOwnership(UsmsContract usmsContract, UsmsMeter meter, CuculusRequestImpl request)
+			throws SmartMeteringException {
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.METER_ACTIVATION);
+		commandExecutorService.execute(CommandMainTask.METER_ACTIVATION_OWNERSHIP, request);
+
+		Command command = request.getExecutedCommand(CommandSubTask.INSTALL_SUBSCRIBER);
+
+		if (command != null && command.getCommandResponse().getCode()
+				.equalsIgnoreCase(((Integer) AIRResponseCode.RESPONSE_CODE_142.getCode()).toString())) {
+			request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.OWNERSHIP_CHANGE);
+			commandExecutorService.execute(CommandMainTask.DELETE_SUBSCRIBER, request);
+			handleDeletedData(request, meter.getMsisdn(), usmsContract);
+			request.setExecutedCommand(new LinkedHashMap<CommandSubTask, Command>());
+			request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.METER_ACTIVATION);
+			commandExecutorService.execute(CommandMainTask.METER_ACTIVATION_OWNERSHIP, request);
+		}
+
+		if (request.isRequestExecutedSuccessfully()) {
+			UsmsMeterReading usmsMeterReading = usmsMeterReadingService.getMeterReadingByMeterId(meter.getId());
+			if (usmsMeterReading != null) {
+				Double lastAccumulatedUnits = Double.valueOf(usmsMeterReading.getAccumulatedUnits());
+				Double accUnits = null;
+				Command readingCommand = request.getExecutedCommand(CommandSubTask.GET_METER_READING);
+				if (readingCommand != null && readingCommand.getCommandResponse() != null) {
+					JSONArray meterReadings = (JSONArray) readingCommand.getCommandResponse().getResponse();
+					LOGGER.debug("meter reading is: {}", meterReadings);
+					JSONObject reading = (JSONObject) meterReadings.get(0);
+					JSONArray array = (JSONArray) reading.get("values");
+					LinkedHashMap accUnitsReading = (LinkedHashMap) array.get(0);
+					accUnits = Double.parseDouble(accUnitsReading.get("value").toString());
+				}
+				Double deltaValues = lastAccumulatedUnits - accUnits;
+				if (deltaValues >= 0) {
+					commandExecutorService.execute(CommandMainTask.CREDIT_CONTROL_EVENT, request);
+				} else {
+					DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformationList = getDAInfos(
+							usmsContract.getUsmsPackage().getId(), deltaValues);
+					request.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS,
+							dedicatedAccountUpdateInformationList);
+					request.putAuxiliaryRequestParameter(AuxRequestParam.OWNERSHIP_CHANGE, Boolean.TRUE);
+					commandExecutorService.execute(CommandMainTask.UPDATE_BALANCE_AND_DATE, request);
+				}
+			}
+		}
+	}
+
+	private DedicatedAccountUpdateInformation[] getDAInfos(Long packageId, Double deltaValues)
+			throws SmartMeteringException {
+		Map<String, Integer> tierWithDAIDMap = CacheUtil.getBucketTypeWithDaIdMap(packageId);
+		DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformationList = new DedicatedAccountUpdateInformation[1];
+		Integer daId = tierWithDAIDMap.get(USMSConstants.LEGACY_BUCKET_NAME);
+		if (daId != null) {
+			DedicatedAccountUpdateInformation dedicatedAccountUpdateInformation = new DedicatedAccountUpdateInformation();
+			dedicatedAccountUpdateInformation.setDedicatedAccountID(daId);
+			dedicatedAccountUpdateInformation.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitType());
+			dedicatedAccountUpdateInformation.setAdjustmentAmountRelative(RequestUtil.toAIR(deltaValues).toString());
+			dedicatedAccountUpdateInformationList[0] = dedicatedAccountUpdateInformation;
+			return dedicatedAccountUpdateInformationList;
+		}
+		return null;
+	}
+
+	/**
+	 * save refund info in bucket detail table
+	 *
+	 * @param request
+	 * @throws SmartMeteringException
+	 */
+	@SuppressWarnings("unchecked")
+	private void handleDeletedData(CuculusRequestImpl request, Long msisdn, UsmsContract contract)
+			throws SmartMeteringException {
+		Command command = request.getExecutedCommand(CommandSubTask.DELETE_SUBSCRIBER);
+		CommandResponse deleteResponse = CommandUtil.getCommandSuccessResponse(command,
+				CommandSubTask.DELETE_SUBSCRIBER.name(), String.valueOf(msisdn));
+		if (deleteResponse.getResponse() != null) {
+			HashMap<Object, Object> response = (HashMap<Object, Object>) deleteResponse.getResponse();
+
+			// get tier list from cache as per package code
+			List<UsmsDaTierMapping> daTierMapping = CacheUtil.getDaTierMappingList(contract.getUsmsPackage().getId());
+
+			// make map of daid and bucket type
+			HashMap<Integer, String> tierDaIdMap = (HashMap<Integer, String>) RequestUtil.getTierDaIdMap(daTierMapping);
+
+			Object[] dedicatedAccountDeleteInfoArr = (Object[]) response.get("dedicatedAccountDeleteInformation");
+
+			UsmsBucketDetailsDTO usmsBucketDetailsDTO = new UsmsBucketDetailsDTO();
+
+			for (Object dedicated : dedicatedAccountDeleteInfoArr) {
+				Map<Object, Object> dedicatedMap = (HashMap<Object, Object>) dedicated;
+				Integer daId = Integer.parseInt(String.valueOf(dedicatedMap.get("dedicatedAccountID")));
+				if (tierDaIdMap.containsKey(daId)) {
+					String daValue = (String) dedicatedMap.get("dedicatedAccountValue1");
+					setBuckectValue(usmsBucketDetailsDTO, tierDaIdMap.get(daId), daValue);
+				}
+
+			}
+
+			if (USMSConstants.CUSTOMER_TYPE_SPECIAL.equalsIgnoreCase(contract.getUsmsPackage().getCustomerType())) {
+				Float mainAccountBalance = RequestUtil
+						.fromAIR(Float.parseFloat(String.valueOf(response.get("balanceCleared1")))).floatValue();
+				usmsBucketDetailsDTO.setMainAccountBalance(mainAccountBalance);
+			}
+
+			LOGGER.info("usmsBucketDetailsDTO:: {}", usmsBucketDetailsDTO);
+			saveBucketDetails(usmsBucketDetailsDTO, contract);
+		}
+	}
+
+	public void setBuckectValue(UsmsBucketDetailsDTO bucket, String currTierType, String value) {
+
+		Optional<BucketType> bucketOpt = BucketType.getEnumFromName(currTierType);
+
+		if (USMSConstants.LEGACY_BUCKET_NAME.equalsIgnoreCase(currTierType)) {
+			bucket.setCurrLegacyUnitBucket((Float.parseFloat(value) / 100));
+		} else {
+			if (bucketOpt.isPresent()) {
+				switch (bucketOpt.get()) {
+				case TIER1:
+					bucket.setCurrTier1Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER2:
+					bucket.setCurrTier2Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER3:
+					bucket.setCurrTier3Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER4:
+					bucket.setCurrTier4Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF1:
+					bucket.setCurrCf1Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF2:
+					bucket.setCurrCf2Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF3:
+					bucket.setCurrCf3Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF4:
+					bucket.setCurrCf4Bucket((Float.parseFloat(value) / 100));
+					break;
+				}
+			}
+		}
+	}
+
+	// check this operation to save UsmsBucketDetailsDTO from
+	// UsmsBucketContractMapping
+	private void saveBucketDetails(UsmsBucketDetailsDTO usmsBucketDetailsDTO, UsmsContract contract)
+			throws SmartMeteringException {
+		UsmsBucketDetailsDTO buckectDetailsDto = usmsBucketDetailsService.save(usmsBucketDetailsDTO);
+
+		UsmsBucketContractMappingDTO bucketContractMapping = new UsmsBucketContractMappingDTO();
+		bucketContractMapping.setContractId(contract.getId());
+		bucketContractMapping.setUsmsBucketDetails(buckectDetailsDto);
+		bucketContractMapping.setOperation(USMSConstants.DELETE_SUBSCRIBER_OPERATION);
+		bucketContractMapping.setUsmsBucketDetails(usmsBucketDetailsDTO);
+		usmsBucketContractMappingService.save(bucketContractMapping);
+	}
+
+	private CuculusRequestImpl createCuculusRequest(UsmsMeter meter, Address address, String electricityMeterNumber,
+			String vendor) {
+		CuculusRequestImpl requestImpl = new CuculusRequestImpl().setLatitude(meter.getLatitude())
+				.setLongitude(meter.getLongitude()).setAddress(address).setMeteringPoint(meter.getMeteringPoint())
+				.setMeterCreatedDate(meter.getCreatedDate()).setMeterUpdatedDate(meter.getLastModifiedDate())
+				.setMeterNumber(StringUtils.hasText(meter.getMeterNumberPrefix())
+						? meter.getMeterNumber().substring(meter.getMeterNumberPrefix().length())
+						: meter.getMeterNumber())
+				.setVendor(vendor).setMeterCapacity(meter.getMeterPhase());
+		requestImpl.putAuxiliaryRequestParameter(AuxRequestParam.SERVICE_PROVIDER, meter.getUsmsServiceProvider());
+		requestImpl.putAuxiliaryRequestParameter(AuxRequestParam.ELECTRICITY_METER, electricityMeterNumber);
+		requestImpl.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, meter.getMeterType());
+		return requestImpl;
+	}
+
+	@Override
+	public UsmsContractDTO getUsmsContractByMeterNumber(String meterNumber) throws SmartMeteringException {
+		UsmsContractDTO contractDTO = null;
+		try {
+			contractDTO = usmsContractMapper
+					.toDto(usmsContractRepository.findTop1ByUsmsMeterMeterNumberOrderById(meterNumber).get());
+		} catch (Throwable th) {
+			LOGGER.error("Error :: UsmsContractServiceImpl :: getUsmsContractByMeterNumber :: Error {}, meterNumbe {}",
+					th, meterNumber);
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, new Object[] { "Active Contract" });
+		}
+
+		return contractDTO;
+	}
+
+	public void sendNotification(Long phoneNumber, String meterNumber, String message) {
+		LOGGER.info("Entered :: UsmsContractServiceImpl :: sendNotification");
+		notificationService.sendMessageToCIS(RequestUtil.getTransactionId(), RequestUtil.getTransactionTime(), message,
+				String.valueOf(phoneNumber));
+		LOGGER.info("Exit :: sendNotification :: sendNotification");
+	}
+
+	@Override
+	public List<String> saveContractCustomer(AccountModel account) {
+		return ApplicationUtil.uploadDoc(account.getMeterType(), account.getCustomerId(), USMSConstants.OTHER,
+				"api/resource/other/", imageFilePath, account.getCustomerDocuments());
+	}
+
+	@Override
+	public List<String> saveOrUpdateOldMeterInfo(AccountModel account) throws SmartMeteringException {
+		LOGGER.debug("In service to save or update old meter info");
+		Optional<UsmsContract> contractOptional = usmsContractRepository
+				.findByContractNumber(account.getContractNumber());
+		LOGGER.debug("contract fetched from db: {}", contractOptional);
+//        Long msisdn = null;
+		if (contractOptional.isPresent()) {
+			// if meter is null and workorder type is normal then create new meter instance
+			if (WorkorderType.FAULTY_METER.equals(account.getWorkorderType())) {
+				LOGGER.debug("validating old meter number: {}", account.getOldMeterId());
+				validateWorkorderMeter(account);
+				LOGGER.debug("handling faulty meter request");
+//                msisdn = handleServiceRequest(account);
+			} else if (WorkorderType.CHANGE_OF_OWNERSHIP.equals(account.getWorkorderType())) {
+				throw new SmartMeteringException(ErrorMessage.CREATE_ERROR, "old meter detail");
+			}
+			// adding meter details.
+			contractOptional.get().getUsmsMeter().prevMeterId(account.getOldMeterId())
+					.prevMeterReading(account.getOldMeterReading()).setPrevMeterType(account.getOldMeterType())
+					.setRemainingKwhUnits(account.getRemainingKwhUnits())
+					.remainingBalance(account.getRemainingBalance());
+//                    .msisdn(msisdn);        // added for faulty meter usecase
+			LOGGER.debug("updated old meter details, saving old meter documents in storage");
+			return ApplicationUtil.uploadDoc(account.getMeterType(), account.getCustomerId(), USMSConstants.OLD_METER,
+					"api/resource/oldMeter/", imageFilePath, account.getOldMeterPhoto());
+		}
+		return Collections.emptyList();
+	}
+
+	@Override
+	public String saveContractAgainstWorkorder(AccountModel account) throws SmartMeteringException {
+		LOGGER.info("in service to generate contract from account: {}", account.getWorkOrderId());
+		Optional<UsmsContract> usmsContract = usmsContractRepository.findByWorkOrderId(account.getWorkOrderId());
+		Optional<UsmsWorkOrder> oneByWorkOrderSp = workOrderRepository.findOneByWorkOrderSp(account.getWorkOrderId());
+		UsmsMeter meter = null;
+		if (oneByWorkOrderSp.isPresent())
+			meter = usmsMeterRepository
+					.findTopByMeterNumberOrderByIdDesc(oneByWorkOrderSp.get().getExistingAccountNumber());
+		LOGGER.debug("contract for workorder :{}, is: {}", account.getWorkOrderId(), usmsContract);
+		if (usmsContract.isPresent())
+			throw new SmartMeteringException(ErrorMessage.ALREADY_EXIST,
+					"account on workorder id " + account.getWorkOrderId());
+		// Generate Contract for account
+		UsmsContract contract = generateUsmsContract(account);
+
+		// Save entire relationship
+		contract = usmsContractRepository.save(contract);
+
+		// generate Contract Number in defined format
+		String contractNumber = String.format(USMSConstants.CONTRACT_CODE_FORMAT, account.getCompany(),
+				ZonedDateTime.now().getYear(), contract.getId());
+
+		// Update contract number with-in same session
+		contract.setContractNumber(contractNumber);
+
+		if (WorkorderType.FAULTY_METER.equals(account.getWorkorderType()) && meter != null)
+			ApplicationUtil.moveFilesToFaulty(imageFilePath, account.getCustomerId(), account.getMeterType(),
+					meter.getId());
+
+		return contractNumber;
+	}
+
+	@Override
+	public UsmsContract onboardMeter(String workorderId) throws SmartMeteringException {
+		LOGGER.info("onboard meter associated with workorder: {}", workorderId);
+		Optional<UsmsContract> usmsContract = usmsContractRepository.findByWorkOrderId(workorderId);
+		Optional<UsmsWorkOrder> usmsWorkOrder = usmsWorkOrderRepository.findOneByWorkOrderSp(workorderId);
+		LOGGER.debug("loaded contract: {} and workorder: {}, against workorder id: {}", usmsContract, usmsWorkOrder,
+				workorderId);
+		if (usmsContract.isPresent() && usmsWorkOrder.isPresent()) {
+			UsmsContract contract = usmsContract.get();
+			UsmsWorkOrder workOrder = usmsWorkOrder.get();
+			Optional<UsmsMeter> oldMeter = Optional.empty();
+
+			UsmsMeterMaster meterMaster = meterMasterRepository
+					.findByMeterNumber(contract.getUsmsMeter().getMeterNumber());
+			// handle faulty request
+			if (WorkorderType.FAULTY_METER.equals(workOrder.getWorkOrderType())) {
+				oldMeter = handleFaulty(contract);
+			}
+
+			LOGGER.debug("generating account number and cust code for customer: {}",
+					contract.getUsmsCustomer().getIcNumber());
+			// 1. Update cust code and accountNumber if residential and commercial type.
+			Optional<UsmsCustomer> customer = setCustCode(Optional.of(contract.getUsmsCustomer()));
+
+			LOGGER.debug("executing command of meter onboarding for workorder: {}", workorderId);
+			// 2. call external systems and onboard meter
+			executeCommandsOnMeterOnBoarding(workOrder.getWorkOrderType(), contract.getUsmsMeter(),
+					contract.getUsmsCustomer().getUsmsInstallationAddress(), oldMeter, meterMaster.getVendor());
+
+			LOGGER.debug("setting contract status to: {}, and meter status to: {}", ContractStatus.ACTIVE,
+					MeterStatus.NEW);
+			// 3. set contract and meter status to active
+			contract.status(ContractStatus.ACTIVE).activeDate(instantUtil.now()).getUsmsMeter().status(MeterStatus.NEW);
+
+			LOGGER.debug("setting meter master to: {}", MeterMasterStatus.INSTALLED);
+			// 4. set meter master status to Installed
+			meterMaster.setStatus(MeterMasterStatus.INSTALLED);
+
+			// 5. close work order
+			updateWorkOrderStatus(workorderId, contract);
+			return contract;
+		}
+
+		return null;
+	}
+
+	private Optional<UsmsMeter> handleFaulty(UsmsContract contract) throws SmartMeteringException {
+		Optional<UsmsMeter> oldMeter;
+		if (contract.getUsmsMeter().getPrevMeterId() == null)
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Old meter info");
+		UsmsMeterMaster faultyMeterMaster = meterMasterRepository
+				.findByMeterNumber(contract.getUsmsMeter().getPrevMeterId());
+		LOGGER.debug("setting meter: {} master to: {}", faultyMeterMaster.getMeterNumber(), MeterMasterStatus.FAULTY);
+		faultyMeterMaster.setStatus(MeterMasterStatus.FAULTY);
+		// call faulty handler and make it faulty
+		handleServiceRequest(contract.getUsmsMeter().getPrevMeterId(), true);
+
+		// load old meter details in case of faulty meter
+		String oldMeterNumber = contract.getUsmsMeter().getPrevMeterId();
+		LOGGER.debug("load faulty meter details for meternumber: {}", oldMeterNumber);
+		oldMeter = usmsMeterRepository.findByMeterNumber(oldMeterNumber).stream()
+				.peek(meter -> LOGGER.debug("find meter against meter number: {}, is: {}", oldMeterNumber, meter))
+				.filter(meter -> MeterStatus.FAULTY.equals(meter.getStatus())).peek(meter -> LOGGER
+						.debug("find faulty meter against meter number: {}, is: {}", oldMeterNumber, meter))
+				.findAny();
+		return oldMeter;
+	}
+
+	@Override
+	public Map<String, List<String>> saveOrUpdateNewMeterInfo(AccountModel account) throws SmartMeteringException {
+		LOGGER.debug("In service to save or update new meter info");
+		validateWorkorderMeter(account);
+		Long msisdn = null;
+		if (WorkorderType.FAULTY_METER.equals(account.getWorkorderType())) {
+			// call faulty handler but don't make it faulty
+			// only to get msisdn
+			msisdn = handleServiceRequest(account.getOldMeterId(), false);
+		}
+		Optional<UsmsContract> contractOptional = usmsContractRepository
+				.findByContractNumber(account.getContractNumber());
+		LOGGER.debug("contract fetched from db: {}", contractOptional);
+		if (contractOptional.isPresent()) {
+			Map<String, List<String>> images = new HashMap<>();
+			UsmsCustomer customer = usmsCustomerRepository.getOne(account.getCustomerId());
+
+			// generate Contract Number in defined format
+			String contractNumber = String.format(USMSConstants.CONTRACT_CODE_FORMAT, account.getCompany(),
+					ZonedDateTime.now().getYear(), contractOptional.get().getId());
+
+			// remove attribute creditLimit, requestId,
+			LOGGER.info("REmark {}", account.getRemarks());
+			UsmsMeter meter = contractOptional.get().contractNumber(contractNumber).remarks(account.getRemarks())
+					.paymentResponsible(getPaymentResponsible(Optional.of(contractOptional.get().getUsmsCustomer())))
+					.getUsmsMeter().initialMeterReading(account.getInitialMeterReading())
+					.usmsServiceProvider(usmsServiceProviderRepository.getOne(account.getCompany()))
+					.usmsCustomer(usmsCustomerRepository.getOne(account.getCustomerId()))
+					.meterType(account.getMeterType()).kvaUnit(account.getKvaUnit()).meterPhase(account.getMeterPhase())
+					.msisdn(msisdn)
+					.meterNumber(account.getMeterPrefix() != null ? account.getMeterPrefix() + account.getNewMeterId()
+							: account.getNewMeterId()) // if company not null then append it in meter number
+					.meteringPoint(customer.getUsmsInstallationAddress().getUsmsKampong().getPostCode()
+							+ USMSConstants.UNDERSCORE + account.getCustomerId() + USMSConstants.UNDERSCORE
+							+ account.getMeterType().name().charAt(0))
+					.longitude(account.getLongitude()).latitude(account.getLatitude())
+					.usmsKawasanBukuMapping(
+							account.getKawasanId() != null && account.getBukuId() != null
+									? kawasanBukuMappingRepository.getOne(
+											new UsmsKawasanBukuMappingId(account.getKawasanId(), account.getBukuId()))
+									: null)
+					.meterNumberPrefix(account.getMeterPrefix()).parentMeter(getParentMeter(account))
+					.usmsCustomer(contractOptional.get().getUsmsCustomer());
+			if (meter.getMsisdn() == null) {
+				meter.msisdn(usmsContractRepository.meterNumberSequence());
+			}
+			images.put("signature", ApplicationUtil.uploadDoc(account.getMeterType(), account.getCustomerId(),
+					USMSConstants.SIGNATURE, "api/resource/signature/", imageFilePath, account.getSignaturePhoto()));
+			images.put("meter", ApplicationUtil.uploadDoc(account.getMeterType(), account.getCustomerId(),
+					USMSConstants.METER, "api/resource/meter/", imageFilePath, account.getMeterPhoto()));
+			return images;
+		}
+		return Collections.emptyMap();
+	}
+
+	@Override
+	public ContractDetail getContractDetails(String workorderId) {
+		LOGGER.info("getting contract details in contract service impl from workorder: {}", workorderId);
+		ContractDetail detail = new ContractDetail();
+		if (StringUtils.hasText(workorderId)) {
+			Optional<UsmsWorkOrder> workOrderSp = usmsWorkOrderRepository.findOneByWorkOrderSp(workorderId);
+			LOGGER.debug("work order: {} from workorderId: {}", workOrderSp, workorderId);
+			if (workOrderSp.isPresent()) {
+				UsmsWorkOrder workOrder = workOrderSp.get();
+				detail.setWorkorderId(workorderId).setWorkorderType(workOrder.getWorkOrderType())
+						.setMeterType(MeterType.valueOf(workOrder.getMeterType().toUpperCase()))
+						.setCompany(workOrder.getUsmsNewServiceProvider().getId())
+						.setOldMeterId(workOrder.getExistingAccountNumber())
+						.setOldCompany(
+								workOrder.getUsmsServiceProvider() != null ? workOrder.getUsmsServiceProvider().getId()
+										: null)
+						.setWorkorderProspectStatus(workOrder.getProspectStatus())
+						.setSelfcareReferenceId(workOrder.getSelfcareReferenceId())
+						.setCustomerId(workOrder.getUsmsChildCustomer().getId());
+				List<UsmsContract> allContracts = usmsContractRepository.findByUsmsCustomerIdAndIsDeletedOrderByIdDesc(
+						workOrder.getUsmsChildCustomer().getId(), Boolean.FALSE);
+				LOGGER.debug("contract(s) found: {} from customerId: {}", allContracts,
+						workOrder.getUsmsChildCustomer().getId());
+				if (!CollectionUtils.isEmpty(allContracts)) {
+					allContracts.stream().forEach(contract -> {
+						if (contract.getWorkOrderId().equals(workorderId)) {
+							detail.setContractNumber(contract.getContractNumber())
+									.setAccountNumberMA(contract.getUsmsCustomer().getAccountNumber())
+									.setAccountNumberSA(contract.getUsmsCustomer().getCustParent().getAccountNumber())
+									.setApplicantTypeId(contract.getUsmsCustomer().getUsmsApplicantType().getId())
+									.setRemarks(contract.getRemarks());
+							UsmsMeter meter = contract.getUsmsMeter();
+							LOGGER.debug("meter found: {} from workorderId: {}", contract, workorderId);
+							if (meter != null) {
+								UsmsKawasanBukuMapping waterMapping = meter.getUsmsKawasanBukuMapping();
+								detail.setNewMeterId(meter.getMeterNumber())
+										.setMeterPrefix(meter.getMeterNumberPrefix())
+										.setOldMeterReading(meter.getPrevMeterReading())
+										.setOldMeterType(meter.getPrevMeterType())
+										.setInitialMeterReading(meter.getInitialMeterReading())
+										.setRemainingBalance(meter.getRemainingBalance()).setKvaUnit(meter.getKvaUnit())
+										.setRemainingKwhUnits(meter.getRemainingKwhUnits())
+										.setLongitude(meter.getLongitude()).setMeterPhase(meter.getMeterPhase())
+										.setLatitude(meter.getLatitude());
+								if (waterMapping != null) {
+									UsmsBuku buku = waterMapping.getUsmsBuku();
+									UsmsKawasan kawasan = waterMapping.getUsmsKawasan();
+									UsmsZone zone = waterMapping.getUsmsZone();
+									detail.setWaterAddress(new WaterAddressModal(buku.getName(), kawasan.getName(),
+											zone.getName(), zone.getUsmsDistrict().getStateCode(), buku.getId(),
+											kawasan.getId(), zone.getId(), zone.getUsmsDistrict().getId()));
+								}
+								if (meter.getPrevMeterId() != null)
+									detail.setOldMeterId(meter.getPrevMeterId());
+								Map<String, List<String>> docs = ApplicationUtil.getUploadedDocuments(
+										meter.getMeterType(), contract.getUsmsCustomer().getId(), imageFilePath);
+								detail.setCustomerDocuments(docs.get(USMSConstants.OTHER)
+										.toArray(new String[docs.get(USMSConstants.OTHER).size()]))
+										.setOldMeterPhotos(docs.get(USMSConstants.OLD_METER)
+												.toArray(new String[docs.get(USMSConstants.OLD_METER).size()]))
+										.setMeterPhotos(docs.get(USMSConstants.METER)
+												.toArray(new String[docs.get(USMSConstants.METER).size()]))
+										.setSignature(docs.get(USMSConstants.SIGNATURE)
+												.toArray(new String[docs.get(USMSConstants.SIGNATURE).size()]));
+							}
+						} else {
+							detail.setSiblingMeterNumber(contract.getUsmsMeter().getMeterNumber());
+						}
+					});
+				}
+			} else {
+				return null;
+			}
+		}
+		return detail;
+	}
+
+	@Override
+	public UsmsContract activateMeter(ActivationModel activationModel) throws SmartMeteringException {
+		LOGGER.info("Entered activateMeter()" + activationModel.getContractNumber());
+		Optional<UsmsContract> usmsContract = usmsContractRepository
+				.findByContractNumber(activationModel.getContractNumber());
+		LOGGER.info("is contract found for contract number: {} ----> {}", activationModel.getContractNumber(),
+				usmsContract.isPresent());
+		if (usmsContract.isPresent()) {
+			UsmsContract contract = usmsContract.get();
+			Optional<UsmsWorkOrder> workOrderSp = usmsWorkOrderRepository
+					.findOneByWorkOrderSp(contract.getWorkOrderId());
+			LOGGER.debug("setting activation steps");
+			contract.usmsPackage(packageCodeRepository.getOne(activationModel.getPackageId()))
+					.reasonForClosure(activationModel.getReasonForClosure()).getUsmsMeter().status(MeterStatus.ACTIVE)
+					.activeDate(instantUtil.now()).kvaUnit(activationModel.getKvaUnit())
+					.setRemainingKwhUnits(activationModel.getRemainingKwhUnits())
+					.setRemainingBalance(activationModel.getRemainingBalance());
+
+			String electricMeterNumber = null;
+			UsmsMeter meter = contract.getUsmsMeter();
+			if (MeterType.WATER.equals(meter.getMeterType())) {
+				LOGGER.info("getting electric meter info to run command for water meter: {}", meter.getMeterNumber());
+				Optional<UsmsMeter> electricMeter = usmsMeterRepository.findByUsmsCustomerAndStatusAndMeterType(
+						contract.getUsmsMeter().getUsmsCustomer(), MeterStatus.ACTIVE, MeterType.ELECTRICITY);
+				if (electricMeter.isPresent()) {
+					electricMeterNumber = electricMeter.get().getMeterNumber();
+				}
+			}
+			LOGGER.info("sibling meter number : {}", electricMeterNumber);
+
+			// Creating Meter Activation Request
+			CuculusRequestImpl request = createCuculusRequest(meter,
+					contract.getUsmsCustomer().getUsmsInstallationAddress(), electricMeterNumber, null); // vendor null
+																											// as no
+																											// command
+																											// needed
+																											// that in
+																											// activation
+																											// flow
+
+			// setting aux param for meter activation
+			setAuxParamOnMeterActivation(contract, meter, request);
+
+			LOGGER.debug("executing meter activation command");
+			// execute commands
+			executeCommandOnMeterActivation(workOrderSp.get().getWorkOrderType(), contract, contract.getUsmsMeter(),
+					request);
+
+			// Complete Workorder
+			LOGGER.debug("setting workorder state to completed");
+			usmsLeadService.updateLeadStatus(ProspectStatus.COMPLETED, contract.getWorkOrderId(),
+					activationModel.getRemarks(), instantUtil.now());
+			LOGGER.debug("workorder id for current contract is: {}", contract.getWorkOrderId());
+
+			return contract;
+		}
+		throw new SmartMeteringException(ErrorMessage.METER_ACTIVATION_FAILED, activationModel.getContractNumber());
+	}
+
+	@Override
+	@Async("taskExecutor")
+	public void sendMessageOnActivation(UsmsContract contract) {
+		LOGGER.debug("Entered :: UsmsContractServiceImpl :: sendMessageOnActivation");
+		Optional<UsmsContract> contractOpt = usmsContractRepository.findByContractNumber(contract.getContractNumber());
+		if (contractOpt.isPresent()) {
+			UsmsContract contractObj = contractOpt.get();
+			Long phonenumber = contractObj.getPaymentResponsible().getContactNumber();
+			UsmsMeter meter = contractObj.getUsmsMeter();
+			String meterNumber = meter.getMeterNumber();
+
+			LanguageEnum language = contractObj.getPaymentResponsible().getLanguage();
+
+			LOGGER.info("send message on meter activation, meternumber :{}|phoneNumber :{}", meterNumber, phonenumber);
+			String message = messageSourceUtil.getMessage("meter.active", language, new Object[] { meterNumber });
+			LOGGER.debug("1st message formed: {}", message);
+			this.sendNotification(phonenumber, meterNumber, message);
+			if (MeterType.ELECTRICITY.equals(meter.getMeterType())) {
+				message = messageSourceUtil.getMessage("meter.active.second", language,
+						new Object[] { meter.getMeterType().name(), meterNumber });
+				LOGGER.debug("2st message formed: {}", message);
+				this.sendNotification(phonenumber, meterNumber, message);
+			}
+		}
+		LOGGER.debug("Exit :: UsmsContractServiceImpl :: sendMessageOnActivation");
+	}
+
+	@Async("taskExecutor")
+	@Override
+	public void emailWorkorderActivation(String workorderId) {
+		LOGGER.info("emailing workorder activation for workorderId: {}, from thread: {}", workorderId,
+				Thread.currentThread().getName());
+		Optional<UsmsWorkOrder> workOrderSp = workOrderRepository.findOneByWorkOrderSp(workorderId);
+		if (workOrderSp.isPresent()) {
+			UsmsWorkOrder usmsWorkOrder = workOrderSp.get();
+			if (usmsWorkOrder != null) {
+				UsmsWorkOrderDTO usmsWorkOrderDTO = usmsLeadMapper.toDto(usmsWorkOrder);
+				if (usmsWorkOrderDTO != null) {
+					UsmsCustomerDTO custDTO = usmsWorkOrderDTO.getUsmsChildCustomer();
+					UsmsInstallationAddressDTO installationAddrDTO = custDTO.getUsmsInstallationAddressId();
+					if (installationAddrDTO.getEmail() != null)
+						mailService.sendWorkOrderActivateEmail("USMS Work Order Details", usmsWorkOrderDTO);
+					else
+						LOGGER.info("Destination email is empty, Email can not be sent");
+				}
+			}
+		}
+	}
+
+	/**
+	 * Use this method to generate new contract for account in inactive state. and
+	 * add inactive meter if not change of ownership workorder
+	 *
+	 * @param account
+	 * @return
+	 */
+	private UsmsContract generateUsmsContract(AccountModel account) {
+		UsmsContract contract = new UsmsContract().status(ContractStatus.INACTIVE).workOrderId(account.getWorkOrderId())
+				.usmsCustomer(usmsCustomerRepository.getOne(account.getCustomerId()));
+		if (!WorkorderType.CHANGE_OF_OWNERSHIP.equals(account.getWorkorderType()))
+			contract.setUsmsMeter(new UsmsMeter().meterType(account.getMeterType()).status(MeterStatus.INACTIVE));
+		return contract;
+	}
+
+}

@@ -1,0 +1,5 @@
+1. How to use Spring Security with Custom Database Tables?
+    Ans. follow question 1 with jsp and question 2 if want the view in thymleaf otherwise rest of the code is all same 
+
+2. How to select user roles using drop-down list?
+  Ans. follow question 3

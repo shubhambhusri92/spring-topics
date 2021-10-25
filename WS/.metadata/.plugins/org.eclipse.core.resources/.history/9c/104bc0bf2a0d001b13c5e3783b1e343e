@@ -1,0 +1,131 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Balance Adjustment Summary</title>
+    <style>
+            body {
+                font-size: 10px;
+                font-family: Roboto, "Helvetica Neue", sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            table > thead > tr.header_row {
+                height: 50px;
+                background: #33006f;
+                color: white;
+            }
+            tr.meter-number-row > th {
+                padding: 15px 0px;
+            }
+            .text-right {
+                text-align: right;
+            }
+            tfoot > tr {
+                border-top: 2px solid;
+            }
+            .text-center {
+                text-align: center;
+            }
+            .padding-left-5 {
+                padding-left: 5px;
+            }
+            .company_logo {
+                width: 100px;
+            }
+            .logo_cell {
+                text-align: right;
+            }
+            .pdf_title {
+                text-align: left;
+                font-size: 22px;
+                font-family: Arial, sans-serif;
+                padding: 0 5px;
+            }
+            .w110 {
+                width: 110px;
+            }
+            .w90 {
+                width: 90px;
+            }
+    </style>
+</head>
+<body>
+<div>
+    <table>
+        <thead>
+        <tr class="header_row">
+            <th class="pdf_title" colspan="8">BALANCE ADJUSTMENT SUMMARY</th>
+            <th class="logo_cell" colspan="5"><img class="company_logo" alt="company_logo" th:src="@{'data:image/jpeg;base64,'+${image}}"/></th>
+        </tr>
+				<tr class="meter-number-row">
+					<th>METER NUMBER:</th>
+					<th colspan="12" th:text="${meterNumber}"></th>
+					<th>TRANSACTION TYPE:</th>
+					<th colspan="12" th:text="${transactionType}"></th>
+				</tr>
+				<!-- <tr> -->
+       <!--  <tr class="meter-number-row">
+            <th>METER NUMBER:</th>
+            <th colspan="6" th:text="${meterNumber}"></th>
+            <th>TRANSACTION TYPE:</th>
+            <th colspan="5" th:text="${transactionType}"></th>
+        </tr> -->
+        <tr>
+            <th class="w90">DATE</th>
+            <th class="padding-left-5">Adj. BY</th>
+            <th class="text-right">AMOUNT($)</th>
+            <th class="text-right">T1($)</th>
+            <th class="text-right">T2($)</th>
+            <th class="text-right">T3($)</th>
+            <th class="text-right">T4($)</th>
+            <th class="text-right">CF1($)</th>
+            <th class="text-right">CF2($)</th>
+            <th class="text-right">CF3($)</th>
+            <th class="text-right">CF4($)</th>
+            <th class="text-right">CF5($)</th>
+            <th class="text-right">MAIN ACCOUNT($)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="adj, iter : ${adjustmentHistory}">
+            <td class="" th:text="${adj.getTransactionDate()}"/>
+            <td class="padding-left-5" th:text="${adj.getAgentId()}"/>
+            <td class="text-right" th:text="${adj.getBucketValues().getAmount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getT1Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getT2Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getT3Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getT4Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getCf1Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getCf2Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getCf3Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getCf4Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getCf5Amount()}"></td>
+            <td class="text-right" th:text="${adj.getBucketValues().getMainAccountBalance()}"></td>
+        </tr>
+        </tbody>
+        <tfoot>
+        <tr>
+            <th class="text-right" colspan="2">TOTAL</th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getAmount() != null].![getBucketValues().getAmount()]), 2, 2, 'POINT')}"></th>
+            <th colspan="10"></th>
+            <!--<th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getT1Amount() != null].![getBucketValues().getT1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getT2Amount() != null].![getBucketValues().getT2Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getT3Amount() != null].![getBucketValues().getT3Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getT4Amount() != null].![getBucketValues().getT4Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getCf1Amount() != null].![getBucketValues().getCf1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getCf2Amount() != null].![getBucketValues().getCf1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getCf3Amount() != null].![getBucketValues().getCf1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getCf4Amount() != null].![getBucketValues().getCf1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getCf5Amount() != null].![getBucketValues().getCf1Amount()]), 2, 2, 'POINT')}"></th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.?[getBucketValues().getMainAccountBalance() != null].![getBucketValues().getMainAccountBalance()]), 2, 2, 'POINT')}"></th>-->
+        </tr>
+        </tfoot>
+    </table>
+</div>
+</body>
+</html>

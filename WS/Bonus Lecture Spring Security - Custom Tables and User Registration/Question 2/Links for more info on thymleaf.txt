@@ -1,0 +1,3 @@
+docs on Spring MVC and Thymeleaf integration : https://www.thymeleaf.org/doc/tutorials/3.0/thymeleafspring.html
+
+docs on Spring Security and Thymeleaf integration : https://www.thymeleaf.org/doc/articles/springsecurity.html

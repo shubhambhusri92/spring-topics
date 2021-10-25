@@ -1,0 +1,7 @@
+
+|squid:S1192"KDefine a constant instead of duplicating this literal "helloworld" 3 times.(éÑª£Hþ’RCRITICALZ
+CODE_SMELL
+vsquid:S3752">Add a "method" parameter to this "@RequestMapping" annotation.(ý³ˆÊÿÿÿÿÿHÿ’RBLOCKERZVULNERABILITY
+qsquid:S3752">Add a "method" parameter to this "@RequestMapping" annotation.(Î„Õ±H€“RBLOCKERZVULNERABILITY
+vsquid:S3752">Add a "method" parameter to this "@RequestMapping" annotation.(±å°•ùÿÿÿÿH“RBLOCKERZVULNERABILITY
+vsquid:S3752.">Add a "method" parameter to this "@RequestMapping" annotation.(‡Ë„þýÿÿÿÿH‚“RBLOCKERZVULNERABILITY

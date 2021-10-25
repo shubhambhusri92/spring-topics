@@ -1,0 +1,62 @@
+package com.ericsson.smartmetering.service.dto;
+
+@SuppressWarnings({ "squid:S1068" })
+public class UsmsBalanceTransferSummaryDto {
+
+	private Long id;
+	private String fromMeter;
+	private String toMeter;
+	private String totalAmount;
+	private String monthYear;
+
+	public UsmsBalanceTransferSummaryDto(Long id, String fromMeter, String toMeter, String totalAmount,
+			String monthYear) {
+		super();
+		this.id = id;
+		this.fromMeter = fromMeter;
+		this.toMeter = toMeter;
+		this.totalAmount = totalAmount;
+		this.monthYear = monthYear;
+	}
+
+	public Long getId() {
+		return id;
+	}
+
+	public void setId(Long id) {
+		this.id = id;
+	}
+
+	public String getFromMeter() {
+		return fromMeter;
+	}
+
+	public void setFromMeter(String fromMeter) {
+		this.fromMeter = fromMeter;
+	}
+
+	public String getToMeter() {
+		return toMeter;
+	}
+
+	public void setToMeter(String toMeter) {
+		this.toMeter = toMeter;
+	}
+
+	public String getTotalAmount() {
+		return totalAmount;
+	}
+
+	public void setTotalAmount(String totalAmount) {
+		this.totalAmount = totalAmount;
+	}
+
+	public String getMonthYear() {
+		return monthYear;
+	}
+
+	public void setMonthYear(String monthYear) {
+		this.monthYear = monthYear;
+	}
+
+}

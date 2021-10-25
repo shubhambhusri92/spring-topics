@@ -1,0 +1,14 @@
+package com.luv2code.practice;
+
+import java.math.BigDecimal;
+
+public class Test {
+
+	public static void main(String[] args) {
+		float f = 2.35f;
+		double d = f;
+		double d1 = 2.4;
+		BigDecimal subtract = new BigDecimal("2.05").subtract(new BigDecimal("2.3f"));
+		System.out.println(subtract);
+	}
+}

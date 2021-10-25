@@ -1,0 +1,211 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  </meta>
+  <title>Adjustment Details</title>
+
+  <style>
+  	body {
+		font-size: 13px;
+		font-family: Roboto, "Helvetica Neue", sans-serif;
+  	}
+  	
+    .parent_width {
+      width: 90%;
+      margin: auto;
+	  box-sizing: border-box;
+    }
+
+    .margin_top_50 {
+      margin-top: 50px;
+    }
+
+    .width_100 {
+      width: 100%;
+	  box-sizing: border-box;
+    }
+
+    .dst_color {
+      padding: 0;
+      background-color: #33006f;
+      color: white;
+    }
+
+    .recipt_header {
+      position: relative;
+      border: 0.5px solid #000;
+      display: inline-block;
+    }
+
+    .recipt_header_content {
+      width: 70%;
+      float: left;
+    }
+
+    .recipt_header_text_bottom {
+      font-size: 14px;
+      margin: 0px 10px 5px;
+    }
+
+    .company_logo {
+      width: 30%;
+   	  display: inline-block;
+    }
+    
+    .company_logo > img {
+		width: 50%;
+	    float: right;
+	    margin-right: 10px;
+	    margin-top: 10px;
+	}
+
+    .recipt_header_text {
+      font-size: 22px;
+      font-weight: 500;
+      padding: 5px 8px;
+    }
+
+    table {
+      display: table;
+      border-collapse: unset;
+      border-spacing: 0px;
+      border-color: grey;
+    }
+
+    table tbody td {
+      border-left: 0.5px solid #000;
+      border-bottom: 0.5px solid #000;
+      padding: 5px 5px;
+      line-height: 10px;
+    }
+
+    /* 
+  table tbody tr td {
+    border-right: 0.5px solid #000;
+    
+  } */
+
+    table tbody tr td:last-child {
+      border-right: 0.5px solid #000;
+    }
+
+    .td_type {
+      background-color: #ebe8ec;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="parent_width">
+    <div class="width_100 dst_color recipt_header">
+      <div class="recipt_header_content">
+        <div class="recipt_header_text">METER ADJUSTMENT RECEIPT - <span th:text="${receiptNumber}"></span></div>
+        <div class="recipt_header_text_bottom">
+			<span th:text="${addressLine}"></span>, <br />
+        	<span th:text="${kampong}"></span>, <span th:text="${postalCode}"></span> <br />
+        	<span th:text="${phnNo}"></span> <span th:text="${emailId}"></span><br />
+		</div>
+      </div>
+      <div class="company_logo"><img alt="mastercard" th:src="@{'data:image/jpeg;base64,'+${image}}" /></div>
+    </div>
+    <table class="width_100">
+      <tr class="CUSTOMER_DETIALS dst_color">
+        <td colspan="2">CUSTOMER DETAILS</td>
+        <td colspan="2">METER DETAILS</td>
+      </tr>
+      <tr>
+        <td class="td_type">CUSTOMER NAME</td>
+        <td th:text="${userName}"></td>
+        <td class="td_type">METER TYPE</td>
+        <td th:text="${meterType}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">CUSTOMER MOBILE NUMBER</td>
+        <td th:text="${phoneNumber}"></td>
+        <td class="td_type">METER NO.</td>
+        <td th:text="${meterNumber}"></td>
+      </tr>
+      <tr th:if="${meterType == 'ELECTRICITY'}">
+        <td class="td_type">DATE</td>
+        <td th:text="${creationDate}"></td>
+        <td class="td_type"><span th:if="${customerType != 'NORMAL'}">KVA UNIT</span></td>
+        <td><span th:if="${customerType != 'NORMAL'}" th:text="${kvaUnit}"></span></td>
+      </tr>
+      <tr th:if="${meterType == 'ELECTRICITY'}">
+        <td class="td_type"></td>
+        <td></td>
+        <td class="td_type"><span th:if="${customerType != 'NORMAL'}">OLD KVA UNIT</span></td>
+        <td><span th:if="${customerType != 'NORMAL'}" th:text="${oldKvaUnit}"></span></td>
+      </tr>
+      <tr th:if="${meterType != 'ELECTRICITY'}">
+        <td class="td_type">DATE</td>
+        <td colspan="3" th:text="${creationDate}"></td>
+      </tr>
+      <tr class="CUSTOMER_DETIALS dst_color">
+        <td colspan="2">ADJUSTMENT INFORMATION</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td class="td_type">SERVICE PROVIDER NAME</td>
+        <td th:text="${serviceProvider}"></td>
+        <td class="td_type">UNITS BEFORE ADJUSTMENT
+          <span th:if="${meterType == 'ELECTRICITY'}">(kWh)</span>
+          <span th:if="${meterType != 'ELECTRICITY'}">(m<sup>3</sup>)</span>
+        </td>
+        <td th:text="${unitsBefore}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">ADJUSTMENT TYPE</td>
+        <td th:text="${adjustmentType}">
+        </td>
+        <td class="td_type">UNITS AFTER ADJUSTMENT
+          <span th:if="${meterType == 'ELECTRICITY'}">(kWh)</span>
+          <span th:if="${meterType != 'ELECTRICITY'}">(m<sup>3</sup>)</span>
+        </td>
+        <td th:text="${unitsAfter}">
+        </td>
+      </tr>
+      <tr th:if="${meterType == 'ELECTRICITY'}">
+        <td class="td_type">ADJUSTMENT AMOUNT</td>
+        <td>
+          <span>$</span>
+          <span th:text="${adjustmentAmount}"></span>
+        </td>
+        <td class="td_type">UNITS ADJUSTED</td>
+        <td th:text="${unitsProcessed}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">LEGACY UNITS (kWh)</td>
+        <td th:text="${legacyUnits}"></td>
+        <td class="td_type">OLD LEGACY UNITS (kWh)</td>
+        <td th:text="${oldLegacyUnits}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">BALANCE BEFORE ADJUSTMENT</td>
+        <td colspan="3">
+          <span>$</span>
+          <span th:text="${balanceBefore}"></span>
+        </td>
+        <td class="td_type">BALANCE AFTER ADJUSTMENT</td>
+        <td>
+          <span>$</span>
+          <span th:text="${balanceAfter}"></span>
+        </td>
+      </tr>
+      <tr class="COLLECTION AGENT DETAILS dst_color">
+        <td colspan="2">COLLECTION AGENT DETAILS</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td class="td_type">COUNTER CODE</td>
+        <td th:text="${counterCode}"></td>
+        <td class="td_type">AGENT CODE</td>
+        <td th:text="${agentCode}"></td>
+      </tr>
+    </table>
+  </div>
+</body>
+
+</html>

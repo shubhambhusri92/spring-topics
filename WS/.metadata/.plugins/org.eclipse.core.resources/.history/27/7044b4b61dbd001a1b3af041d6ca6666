@@ -1,0 +1,17 @@
+
+enum Data
+{
+	ACTIVE,INACTIVE;
+}
+public class Test {
+
+	public static void main(String[] args) {
+		
+		Float density = 20.500000f;
+		
+		String s = String.format("%.02f", density);
+		System.out.println(s);
+		System.out.println(Float.parseFloat(s));
+	
+	}
+}

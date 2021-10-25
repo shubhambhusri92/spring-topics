@@ -1,0 +1,23 @@
+package com.ericsson.smartmetering.domain;
+
+import javax.annotation.Generated;
+import javax.persistence.metamodel.SingularAttribute;
+import javax.persistence.metamodel.StaticMetamodel;
+
+@Generated(value = "org.hibernate.jpamodelgen.JPAMetaModelEntityProcessor")
+@StaticMetamodel(UsmsBalanceTransferHistory.class)
+public abstract class UsmsBalanceTransferHistory_ extends com.ericsson.smartmetering.domain.AbstractAuditingEntity_ {
+
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, String> reason;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Float> amount;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Float> legacyUnits;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Long> toMsisdn;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, String> fromMeter;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Long> fromMsisdn;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, String> toMeter;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Long> id;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, String> transactionId;
+	public static volatile SingularAttribute<UsmsBalanceTransferHistory, Boolean> fullAmount;
+
+}
+

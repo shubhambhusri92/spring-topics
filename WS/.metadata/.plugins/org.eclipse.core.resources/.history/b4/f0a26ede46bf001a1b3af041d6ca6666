@@ -1,0 +1,22 @@
+import java.util.Optional;
+
+enum Data
+{
+	ACTIVE,INACTIVE;
+}
+public class Test {
+
+	public static void main(String[] args) {
+		
+		Optional<String> data= Optional.empty();
+		if(data.isPresent())
+		{
+			System.out.println("Present");
+		}
+		
+		else
+		{
+			System.out.println("Not Present");
+		}
+	}
+}

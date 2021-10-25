@@ -1,0 +1,8 @@
+package com.ericsson.smartmetering.service.dto;
+
+import com.ericsson.smartmetering.domain.UsmsBalanceTransferSummary;
+
+public class UsmsBalanceTransferSummaryDto extends UsmsBalanceTransferSummary {
+ 
+	
+}

@@ -1,0 +1,12 @@
+package com.luv2code.practice;
+
+import java.math.BigDecimal;
+
+public class Test {
+
+	public static void main(String[] args) {
+		
+		BigDecimal subtract = new BigDecimal("2.05").subtract(new BigDecimal("2.3f"));
+		System.out.println(subtract);
+	}
+}

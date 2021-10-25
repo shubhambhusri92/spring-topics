@@ -1,0 +1,131 @@
+package com.ericsson.smartmetering.service.impl;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.time.LocalDateTime;
+import java.time.Month;
+import java.time.temporal.TemporalAdjusters;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.domain.UsmsBalanceTransferSummary;
+import com.ericsson.smartmetering.domain.enumeration.ErrorMessage;
+import com.ericsson.smartmetering.domain.enumeration.MeterType;
+import com.ericsson.smartmetering.domain.enumeration.TransferType;
+import com.ericsson.smartmetering.repository.UsmsBalanceTransferSummaryRepository;
+import com.ericsson.smartmetering.repository.UsmsMeterRepository;
+import com.ericsson.smartmetering.service.MailService;
+import com.ericsson.smartmetering.service.dto.UsmsBalanceTransferHistoryDTO;
+import com.ericsson.smartmetering.service.dto.UsmsBalanceTransferSummaryDto;
+import com.ericsson.smartmetering.service.util.NumberUtil;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+
+/**
+ * @author Ericsson
+ *
+ */
+@Service
+public class BalanceTransferSummaryServiceImpl {
+
+	@Autowired
+	private UsmsBalanceTransferSummaryRepository balanceTransferSummaryRepo;
+
+	@Autowired
+	private UsmsBalanceTransferHistoryServiceImpl balanceTransferHistoryService;
+
+	@Autowired
+	private MailService mailService;
+
+	@Autowired
+	UsmsMeterRepository usmsMeterRepository;
+
+	public List<Object> getBalanceTransferSummary(String meterNumber, String startMonth, String endMonth,
+			String transferType) {
+
+		List<UsmsBalanceTransferSummary> balanceTransferSummary = null;
+
+		if (TransferType.SEND.equals(TransferType.valueOf(transferType)))
+			balanceTransferSummary = balanceTransferSummaryRepo
+					.findAllByFromMeterAndMonthYearBetweenOrderByIdDesc(meterNumber, startMonth, endMonth);
+
+		else if (TransferType.RECEIVED.equals(TransferType.valueOf(transferType)))
+			balanceTransferSummary = balanceTransferSummaryRepo
+					.findAllByToMeterAndMonthYearBetweenOrderByIdDesc(meterNumber, startMonth, endMonth);
+
+		MeterType meterType = usmsMeterRepository.findMeterTypeByMeterNumber(meterNumber);
+		if (meterType.equals(MeterType.WATER)) {
+			return balanceTransferSummary.stream().map(balance -> new UsmsBalanceTransferSummaryDto(balance.getId(),
+					balance.getFromMeter(), balance.getToMeter(), balance.getTotalAmount(), balance.getMonthYear()));
+		}
+
+		return balanceTransferSummary;
+	}
+
+	/**
+	 * METHOD USED FOR GENERATING PDF SUMMARY REPORT FOR BALANCE-TRANSFER
+	 * 
+	 * @param month
+	 * @return
+	 * @throws Exception
+	 * @throws IllegalArgumentException
+	 */
+	public ResponseEntity<InputStreamResource> getBalanceTransferSummaryReport(String month, String meterNumber,
+			String transferType) throws Exception {
+
+		List<UsmsBalanceTransferHistoryDTO> findAllBalanceTransferHistory = null;
+
+		int[] monthyear = NumberUtil.splitMonthYear(month);
+		LocalDateTime startDateTime = LocalDateTime.of(monthyear[0], Month.of(monthyear[1]), 1, 0, 0);
+		LocalDateTime endDateTime = startDateTime.with(TemporalAdjusters.lastDayOfMonth()).withHour(23).withMinute(59)
+				.withSecond(59).withNano(999999999);
+
+		if (TransferType.valueOf(transferType).equals(TransferType.SEND))
+			findAllBalanceTransferHistory = balanceTransferHistoryService.findAllBalanceTransferHistory(meterNumber,
+					null, startDateTime, endDateTime);
+
+		else if (TransferType.valueOf(transferType).equals(TransferType.RECEIVED))
+			findAllBalanceTransferHistory = balanceTransferHistoryService.findAllBalanceTransferHistory(null,
+					meterNumber, startDateTime, endDateTime);
+
+		else
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "No such Transfer Type Exists");
+
+		String imageBinary = MailService.getImageBinary();
+		Map<String, Object> map = new HashMap<>();
+		map.put("balanceTransferHistory", findAllBalanceTransferHistory);
+		map.put("image", imageBinary);
+		map.put("meterNumber", meterNumber);
+		map.put("transactionType", transferType);
+
+		MeterType meterType = usmsMeterRepository.findMeterTypeByMeterNumber(meterNumber);
+		if (meterType != null && meterType.equals(MeterType.ELECTRICITY)) {
+			map.put("meterType", meterType);
+		}
+
+		File file = null;
+		try {
+			file = mailService.createPdf(map, "balanceTransferSummary", meterNumber,
+					"BALANCE-TRANSFER-SUMMARY-" + MDC.get(USMSConstants.TRANSACTION_ID));
+			String mimeType = USMSConstants.MIME_TYPE;
+			InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
+			MediaType mediaType = MediaType.parseMediaType(mimeType);
+			return ResponseEntity.ok().header(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=" + file.getName())
+					.contentType(mediaType).contentLength(file.length()).body(resource);
+		} finally {
+			if (Objects.nonNull(file))
+				file.delete();
+		}
+	}
+}

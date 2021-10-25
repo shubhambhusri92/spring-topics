@@ -1,0 +1,128 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>BALANCE TRANSFER SUMMARY</title>
+<style>
+body {
+	font-size: 10px;
+	font-family: Roboto, "Helvetica Neue", sans-serif;
+	margin: 0;
+	padding: 0;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+table>thead>tr.header_row {
+	height: 50px;
+	background: #33006f;
+	color: white;
+}
+
+tr.meter-number-row>th {
+	padding: 15px 0px;
+}
+
+tr>.receiptId, tr>.amountTransferred, tr>.fromMeter, tr>.toMeter,tr>.legacyUnits, tfoot>tr>th
+	{
+	text-align: right;
+}
+
+tfoot>tr {
+	border-top: 2px solid;
+}
+
+.receiptId {
+	width: 90px;
+}
+
+.amountTransferred {
+	width: 80px;
+}
+
+.source, .createdBy {
+	width: 90px;
+}
+
+.fromMeter, .toMeter, .legacyUnits, .reason {
+	width: 120px;
+}
+
+.paymentDate {
+	text-align: center;
+	width: 150px;
+}
+
+.site, .source, .createdBy, .reason {
+	padding-left: 5px;
+}
+
+.company_logo {
+	width: 100px;
+}
+
+.logo_cell {
+	text-align: right;
+}
+
+.pdf_title {
+	text-align: left;
+	font-size: 22px;
+	font-family: Arial, sans-serif;
+	padding: 0 5px;
+}
+</style>
+</head>
+<body>
+	<div>
+		<table>
+			<thead>
+				<tr class="header_row">
+					<th class="pdf_title" colspan="4">BALANCE TRANSFER SUMMARY</th>
+					<th class="logo_cell" colspan="3"><img class="company_logo"
+						alt="company_logo" th:src="@{'data:image/jpeg;base64,'+${image}}" /></th>
+				</tr>
+				<tr class="meter-number-row">
+					<th>METER NUMBER:</th>
+					<th colspan="2" th:text="${meterNumber}"></th>
+					<th>TRANSACTION TYPE:</th>
+					<th colspan="3" th:text="${transactionType}"></th>
+				</tr>
+				<tr>
+					<th class="paymentDate">TRANSACTION DATE</th>
+					<th class="receiptId">TRANSACTION ID</th>
+					<th class="createdBy">CREATED BY</th>
+					<th class="reason">REASON</th>
+					<th class="amountTransferred">AMOUNT TRANSFERRED($)</th>
+					<th class="fromMeter">FROM METER</th>
+					<th class="toMeter">TO METER</th>
+					<th th:if="${meterType != null}" class="legacyUnits">Legacy Units</th>
+					
+				</tr>
+			</thead>
+			<tbody>
+				<tr th:each="balanceTransfer, iter : ${balanceTransferHistory}">
+					<td class="paymentDate" th:text="${balanceTransfer.time}" />
+					<td class="receiptId" th:text="${balanceTransfer.transactionId}" />
+					<td class="createdBy" th:text="${balanceTransfer.createdBy}" />
+					<td class="reason" th:text="${balanceTransfer.reason}" />
+					<td class="amountTransferred" th:text="${balanceTransfer.amount}" />
+					<td class="fromMeter" th:text="${balanceTransfer.fromMeter}" />
+					<td class="toMeter" th:text="${balanceTransfer.toMeter}" />
+					<td th:if="${meterType != null}" class="legacyUnits" th:text="${balanceTransfer.toMeter}" />
+				</tr>
+			</tbody>
+			<tfoot>
+				<tr>
+					<th colspan="4">TOTAL</th>
+					<th
+						th:text="${#numbers.formatDecimal(#aggregates.sum(balanceTransferHistory.![amount]), 2, 2, 'POINT')}"></th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+</body>
+</html>

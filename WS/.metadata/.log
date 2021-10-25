@@ -1,0 +1,130 @@
+!SESSION 2021-04-18 12:33:00.801 -----------------------------------------------
+eclipse.buildId=4.4.2.201911201053-RELEASE
+java.version=1.8.0_231
+java.vendor=Oracle Corporation
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=en_US
+Framework arguments:  -product org.springframework.boot.ide.branding.sts4
+Command-line arguments:  -data E:\Project Development\WS -os win32 -ws win32 -arch x86_64 -product org.springframework.boot.ide.branding.sts4
+
+This is a continuation of log file E:\Project Development\WS\.metadata\.bak_0.log
+Created Time: 2021-04-18 12:34:17.817
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.819
+!MESSAGE Preparing classpath changed notification hb-05-many-to-many
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.825
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.828
+!MESSAGE classpath=36 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.834
+!MESSAGE buffering callback sts4.classpath.imyeUvfV hb-05-many-to-many false 19
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.836
+!MESSAGE Preparing classpath changed notification hb-lazy-vs-eager-demo
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.837
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.840
+!MESSAGE classpath=36 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.843
+!MESSAGE buffering callback sts4.classpath.imyeUvfV hb-lazy-vs-eager-demo false 19
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.845
+!MESSAGE Preparing classpath changed notification hibernate-tutorial
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.848
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.853
+!MESSAGE classpath=36 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.856
+!MESSAGE buffering callback sts4.classpath.imyeUvfV hibernate-tutorial false 19
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.857
+!MESSAGE Preparing classpath changed notification spring-annotation-java
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.858
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.861
+!MESSAGE classpath=80 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.869
+!MESSAGE buffering callback sts4.classpath.imyeUvfV spring-annotation-java false 19
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.871
+!MESSAGE Preparing classpath changed notification spring-demo
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.872
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.874
+!MESSAGE classpath=80 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.888
+!MESSAGE buffering callback sts4.classpath.imyeUvfV spring-demo false 19
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.890
+!MESSAGE Preparing classpath changed notification spring-demo-aop
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.892
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.897
+!MESSAGE classpath=81 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.905
+!MESSAGE buffering callback sts4.classpath.imyeUvfV spring-demo-aop false 20
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.906
+!MESSAGE Preparing classpath changed notification spring-demo-aop-pointcut-order-aspects
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.908
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.910
+!MESSAGE classpath=81 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.919
+!MESSAGE buffering callback sts4.classpath.imyeUvfV spring-demo-aop-pointcut-order-aspects false 20
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.920
+!MESSAGE Preparing classpath changed notification spring-demo-aop-read-jointpoint
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.922
+!MESSAGE exists = true open = true => deleted = false
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.924
+!MESSAGE classpath=81 entries
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.929
+!MESSAGE buffering callback sts4.classpath.imyeUvfV spring-demo-aop-read-jointpoint false 20
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.933
+!MESSAGE executing callback sts4.classpath.imyeUvfV 12 batched events
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 12:34:17.990
+!MESSAGE executing callback sts4.classpath.imyeUvfV SUCCESS [done]
+
+!ENTRY org.eclipse.equinox.p2.metadata.repository 4 1000 2021-04-18 12:39:59.485
+!MESSAGE No repository found at http://www.objectaid.com/update.
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 20:30:54.270
+!MESSAGE ClasspathListenerHandler removeClasspathListener sts4.classpath.imyeUvfV
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 20:30:54.273
+!MESSAGE unsubscribing from classpath changes: sts4.classpath.imyeUvfV
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 20:30:54.275
+!MESSAGE subsribers = {}
+
+!ENTRY org.springframework.tooling.ls.eclipse.commons 1 0 2021-04-18 20:30:54.276
+!MESSAGE ClasspathListenerHandler removeClasspathListener sts4.classpath.imyeUvfV => OK
+
+!ENTRY org.eclipse.ui 2 2 2021-04-18 20:31:08.349
+!MESSAGE Invalid property category path: org.springframework.ide.eclipse.beans.ui.properties.ProjectPropertyPage (bundle: org.springframework.ide.eclipse.xml.namespaces, propertyPage: org.springframework.ide.eclipse.beans.ui.namespaces.projectPropertyPage)

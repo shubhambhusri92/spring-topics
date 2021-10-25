@@ -1,0 +1,15 @@
+
+`squid:S1481"+Remove this unused "myConn" local variable.(ç¯®İ8É—„ä´.H‘™RMINORZ
+CODE_SMELL
+m
+squid:S106"9Replace this use of System.out or System.err by a logger.(ß¸çï8É—„ä´.H™RMAJORZ
+CODE_SMELL
+xsquid:S2095"HUse try-with-resources or close this "Connection" in a "finally" clause.(ç¯®İ8É—„ä´.H™RBLOCKERZBUG
+Zsquid:S2068" Remove this hard-coded password.(ç¯®İ8É—„ä´.H™RBLOCKERZVULNERABILITY
+•squid:S2068"V'password' detected in this expression, review this potentially hard-coded credential.(Ü‹ãıÿÿÿÿ8ªøã´.Hÿ˜RBLOCKERZVULNERABILITY
+r
+squid:S106"9Replace this use of System.out or System.err by a logger.(¬÷µùÿÿÿÿ8¶â†ä´.H”™RMAJORZ
+CODE_SMELL
+osquid:S1854":Remove this useless assignment to local variable "myConn".(ç¯®İ8É—„ä´.H™RMAJORZ
+CODE_SMELL
+[squid:S1148"#Use a logger to log this exception.(Ç’Çê8”Äòã´.Hô˜RMINORZVULNERABILITY

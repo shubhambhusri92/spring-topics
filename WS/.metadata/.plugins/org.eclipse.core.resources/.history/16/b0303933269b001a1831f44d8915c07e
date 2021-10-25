@@ -1,0 +1,245 @@
+package com.ericsson.smartmetering.mysql.domain;
+
+import java.io.Serializable;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.IdClass;
+import javax.persistence.Table;
+
+import org.hibernate.annotations.Immutable;
+
+@Entity
+@Immutable
+@Table(name = "hist_topup_summary_view")
+@IdClass(HistoryTopupSummaryViewKey.class)
+public class HistoryTopupSummaryView implements Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1061975688863988638L;
+
+	@Id
+	@Column(name = "`transactiondatetime`")
+	private String transactionDateTime;
+
+	@Id
+	@Column(name = "`subscribernumber`")
+	private String subscriberNumber;
+
+	@Column(name = "`origintransactionid`")
+	private String originTransactionId;
+
+	private transient String cardTransactionId;
+
+	private transient Float actualRechageAmount;
+
+	@Column(name = "`originnodeid`")
+	private String originNodeId;
+
+//	@Id
+	@Column(name = "`meter_number`")
+	private String meterNumber;
+
+	@Column(name = "`site_name`")
+	private String siteName;
+
+	@Column(name = "`user_id`")
+	private String userId;
+
+	@Column(name = "`payment_mode`")
+	private String paymentMode;
+
+	@Column(name = "`cust_code`")
+	private String custCode;
+
+	@Column(name = "`deltaamount_sum`")
+	private Double deltaAmount;
+
+	@Column(name = "`deducted_amount`")
+	private Float deductedamount;
+
+	/**
+	 * @return the transactionDateTime
+	 */
+	public String getTransactionDateTime() {
+		return transactionDateTime;
+	}
+
+	/**
+	 * @param transactionDateTime the transactionDateTime to set
+	 */
+	public void setTransactionDateTime(String transactionDateTime) {
+		this.transactionDateTime = transactionDateTime;
+	}
+
+	/**
+	 * @return the subscriberNumber
+	 */
+	public String getSubscriberNumber() {
+		return subscriberNumber;
+	}
+
+	/**
+	 * @param subscriberNumber the subscriberNumber to set
+	 */
+	public void setSubscriberNumber(String subscriberNumber) {
+		this.subscriberNumber = subscriberNumber;
+	}
+
+	/**
+	 * @return the originTransactionId
+	 */
+	public String getOriginTransactionId() {
+		return originTransactionId;
+	}
+
+	/**
+	 * @param originTransactionId the originTransactionId to set
+	 */
+	public void setOriginTransactionId(String originTransactionId) {
+		this.originTransactionId = originTransactionId;
+	}
+
+	public String getCardTransactionId() {
+		return cardTransactionId;
+	}
+
+	public HistoryTopupSummaryView setCardTransactionId(String cardTransactionId) {
+		this.cardTransactionId = cardTransactionId;
+		return this;
+	}
+
+	public Float getActualRechageAmount() {
+		return actualRechageAmount;
+	}
+
+	public HistoryTopupSummaryView setActualRechageAmount(Float actualRechageAmount) {
+		this.actualRechageAmount = actualRechageAmount;
+		return this;
+	}
+
+	/**
+	 * @return the originNodeId
+	 */
+	public String getOriginNodeId() {
+		return originNodeId;
+	}
+
+	/**
+	 * @param originNodeId the originNodeId to set
+	 */
+	public void setOriginNodeId(String originNodeId) {
+		this.originNodeId = originNodeId;
+	}
+
+	/**
+	 * @return the meterNumber
+	 */
+	public String getMeterNumber() {
+		return meterNumber;
+	}
+
+	/**
+	 * @param meterNumber the meterNumber to set
+	 */
+	public void setMeterNumber(String meterNumber) {
+		this.meterNumber = meterNumber;
+	}
+
+	/**
+	 * @return the siteName
+	 */
+	public String getSiteName() {
+		return siteName;
+	}
+
+	/**
+	 * @param siteName the siteName to set
+	 */
+	public void setSiteName(String siteName) {
+		this.siteName = siteName;
+	}
+
+	/**
+	 * @return the userId
+	 */
+	public String getUserId() {
+		return userId;
+	}
+
+	/**
+	 * @param userId the userId to set
+	 */
+	public void setUserId(String userId) {
+		this.userId = userId;
+	}
+
+	/**
+	 * @return the paymentMode
+	 */
+	public String getPaymentMode() {
+		return paymentMode;
+	}
+
+	/**
+	 * @param paymentMode the paymentMode to set
+	 */
+	public void setPaymentMode(String paymentMode) {
+		this.paymentMode = paymentMode;
+	}
+
+	/**
+	 * @return the custCode
+	 */
+	public String getCustCode() {
+		return custCode;
+	}
+
+	/**
+	 * @param custCode the custCode to set
+	 */
+	public void setCustCode(String custCode) {
+		this.custCode = custCode;
+	}
+
+	/**
+	 * @return the deltaAmount
+	 */
+	public Double getDeltaAmount() {
+		return deltaAmount;
+	}
+
+	/**
+	 * @param deltaAmount the deltaAmount to set
+	 */
+	public void setDeltaAmount(Double deltaAmount) {
+		this.deltaAmount = deltaAmount;
+	}
+
+	public Float getDeductedamount() {
+		return deductedamount;
+	}
+
+	public void setDeductedamount(Float deductedamount) {
+		this.deductedamount = deductedamount;
+	}
+
+	@Override
+	public String toString() {
+		return "HistoryTopupSummaryView [transactionDateTime=" + transactionDateTime + ", subscriberNumber="
+				+ subscriberNumber + ", originTransactionId=" + originTransactionId + ", originNodeId=" + originNodeId
+				+ ", meterNumber=" + meterNumber + ", siteName=" + siteName + ", userId=" + userId + ", paymentMode="
+				+ paymentMode + ", custCode=" + custCode + ", deltaAmount=" + deltaAmount + ", deductedamount="
+				+ deductedamount + "]";
+	}
+
+	/*
+	 * (non-Javadoc)
+	 * 
+	 * @see java.lang.Object#toString()
+	 */
+
+}

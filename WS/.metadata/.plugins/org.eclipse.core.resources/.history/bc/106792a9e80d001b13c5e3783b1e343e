@@ -1,0 +1,121 @@
+package com.ericsson.smartmetering.web.rest;
+
+import java.util.List;
+
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.domain.UsmsBalanceTransferSummary;
+import com.ericsson.smartmetering.domain.enumeration.ErrorMessage;
+import com.ericsson.smartmetering.service.impl.BalanceTransferSummaryServiceImpl;
+import com.ericsson.smartmetering.service.util.RequestUtil;
+import com.ericsson.smartmetering.web.rest.errors.SelfCareRequestProcessException;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+import com.ericsson.smartmetering.web.rest.vm.BalanceTransferSummary;
+import com.ericsson.smartmetering.web.rest.vm.Response;
+import com.ericsson.smartmetering.web.rest.vm.SelfcareResponse;
+
+import io.swagger.annotations.ApiImplicitParam;
+import io.swagger.annotations.ApiImplicitParams;
+
+/**
+ * @author Ericsson
+ *
+ */
+@RestController
+@RequestMapping("/api/balance-transfer")
+public class BalanceTransferSummaryResource {
+
+	private Logger logger = LoggerFactory.getLogger(BalanceTransferSummaryResource.class);
+
+	@Autowired
+	private BalanceTransferSummaryServiceImpl balanceTransferSummaryService;
+
+	/**
+	 * API EXPOSED FOR FETCHING CALCULATED ADJUSTED BALANCE SUMMARY
+	 * 
+	 * @param meterNumber
+	 * @param startMonth
+	 * @param endMonth
+	 * @param transferType SEND OR RECEIVED
+	 * @return
+	 */
+	@ApiImplicitParams({
+			@ApiImplicitParam(name = "Authorization", value = "Authorization token", required = true, dataType = "string", paramType = "header") })
+	@GetMapping("/summary")
+	public List<?> getBalanceTransferSummary(@Valid @NotNull @RequestParam String meterNumber,
+			@Valid @NotNull @RequestParam String startMonth, @Valid @NotNull @RequestParam String endMonth,
+			@Valid @NotNull @RequestParam String transferType) {
+
+		logger.info("Request Received for fetching  balance transfer summary with meter number : {}", meterNumber);
+
+		return balanceTransferSummaryService.getBalanceTransferSummary(meterNumber, startMonth, endMonth, transferType);
+	}
+
+	/**
+	 * API EXPOSED FOR SELFCARE ONLY
+	 * 
+	 * @param param
+	 * @param result
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	@PreAuthorize("hasAnyAuthority('SELFCARE')")
+	@ApiImplicitParams({
+			@ApiImplicitParam(name = "Authorization", value = "Authorization token", required = true, dataType = "string", paramType = "header") })
+	@PostMapping("/summary")
+	public ResponseEntity<Response> getBalanceTransferSummary(@Valid @RequestBody BalanceTransferSummary param,
+			final BindingResult result) throws SmartMeteringException {
+
+		logger.debug("REST request to get balance transfer summary : {}", param);
+
+		String errorMessage = RequestUtil.getErrorList(result);
+
+		if (null != errorMessage) {
+			logger.error("error while getting balance transfer summary as value are not proper for fields :: {}",
+					errorMessage);
+			throw new SelfCareRequestProcessException(ErrorMessage.CREATE_ERROR, param.getTransactionNumber(),
+					errorMessage);
+		}
+
+		List<?> list = null;
+		list = balanceTransferSummaryService.getBalanceTransferSummary(param.getMeterNumber(), param.getStartMonth(),
+				param.getEndMonth(), param.getTransferType());
+
+		return ResponseEntity.ok(new SelfcareResponse(param.getTransactionNumber(), USMSConstants.RESPONSE_SUCCESS,
+				null, null, null, list));
+
+	}
+
+	/**
+	 * API FOR FETCHING BALACE TRANSFER SUMMARY REPORT
+	 * 
+	 * @param month
+	 * @return
+	 * @throws Exception 
+	 * @throws IllegalArgumentException 
+	 */
+	@GetMapping(value = "/summary/pdfreport", produces = MediaType.APPLICATION_PDF_VALUE)
+	public ResponseEntity<InputStreamResource> getBalanceTransferSummaryReport(
+			@Valid @NotNull @RequestParam("month") String month,
+			@Valid @NotNull @RequestParam("meterNumber") String meterNumber,
+			@Valid @NotNull @RequestParam String transferType) throws IllegalArgumentException, Exception {
+		return balanceTransferSummaryService.getBalanceTransferSummaryReport(month, meterNumber, transferType);
+	}
+}

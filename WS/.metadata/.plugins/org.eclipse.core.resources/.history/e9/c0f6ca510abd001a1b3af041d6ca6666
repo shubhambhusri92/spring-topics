@@ -1,0 +1,13 @@
+
+enum Data
+{
+	ACTIVE,INACTIVE;
+}
+public class Test {
+
+	public static void main(String[] args) {
+		
+		System.out.println(Data.ACTIVE.name());
+		Data.ACTIVE.toString(Data.ACTIVE.toString())
+	}
+}

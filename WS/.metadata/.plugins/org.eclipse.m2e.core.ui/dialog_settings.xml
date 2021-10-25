@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="MavenProjectImportWizardPage">
+		<list key="rootDirectory">
+			<item value="C:\EO_NOKIA\EO_Nokia_16_07_2020\eo-nvnfm-adapter"/>
+			<item value="E:\Smart Metering\DST_CHECKOUT\DST_PAUSE_WATER_METER_SCENARIO\DST_SMART_Meter_BSS_Solution"/>
+			<item value="C:\SmartMetering\Cuclus and selfcare simulators\simulator\selfcare-simulator"/>
+			<item value="C:\SmartMetering\Cuclus and selfcare simulators\simulator\cuculus-simulator"/>
+		</list>
+		<list key="projectNameTemplate">
+			<item value="[artifactId]"/>
+			<item value="[artifactId]-TRUNK"/>
+			<item value="[artifactId]-[version]"/>
+			<item value="[groupId].[artifactId]"/>
+			<item value="[groupId].[artifactId]-[version]"/>
+			<item value="[name]"/>
+		</list>
+	</section>
+	<section name="org.eclipse.m2e.core.pom.overview">
+	</section>
+	<section name="org.eclipse.m2e.core.pom.dependencies">
+	</section>
+</section>

@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<list key="installedFeatures">
+		<item value="com.ianbrandt.tools.m2e.mdp.feature:0.0.4.201409291703"/>
+		<item value="com.objectaid.uml.addon:1.2.4"/>
+		<item value="com.objectaid.uml.cls:1.2.4"/>
+		<item value="com.objectaid.uml.seq:1.2.4"/>
+		<item value="org.eclipse.buildship:3.1.2.v20190903-1802"/>
+		<item value="org.eclipse.egit.gitflow.feature:5.5.0.201909110433-r"/>
+		<item value="org.eclipse.egit:5.5.0.201909110433-r"/>
+		<item value="org.eclipse.emf.common:2.18.0.v20191225-1014"/>
+		<item value="org.eclipse.emf.ecore:2.21.0.v20200127-1342"/>
+		<item value="org.eclipse.epp.mpc:1.8.0.v20190725-1807"/>
+		<item value="org.eclipse.help:2.2.700.v20190916-1045"/>
+		<item value="org.eclipse.jdt:3.18.100.v20190916-1045"/>
+		<item value="org.eclipse.jgit.lfs:5.5.0.201909110433-r"/>
+		<item value="org.eclipse.jgit.ssh.apache:5.5.0.201909110433-r"/>
+		<item value="org.eclipse.jgit:5.5.0.201909110433-r"/>
+		<item value="org.eclipse.jst.common.fproj.enablement.jdt:3.12.0.v201906031755"/>
+		<item value="org.eclipse.jst.enterprise_ui.feature:3.15.0.v201908261515"/>
+		<item value="org.eclipse.m2e.feature:1.13.0.20190716-1624"/>
+		<item value="org.eclipse.m2e.logback.feature:1.13.0.20190716-1624"/>
+		<item value="org.eclipse.m2e.wtp.feature:1.4.2.20190530-0057"/>
+		<item value="org.eclipse.m2e.wtp.jaxrs.feature:1.4.2.20190530-0057"/>
+		<item value="org.eclipse.m2e.wtp.jsf.feature:1.4.2.20190530-0057"/>
+		<item value="org.eclipse.pde:3.14.100.v20190916-1045"/>
+		<item value="org.eclipse.platform:4.13.0.v20190916-1323"/>
+		<item value="org.eclipse.rcp:4.13.0.v20190916-1045"/>
+		<item value="org.eclipse.tm.terminal.connector.ssh.feature:4.6.0.202001311822"/>
+		<item value="org.eclipse.tm.terminal.control.feature:4.6.0.202002152037"/>
+		<item value="org.eclipse.tm.terminal.feature:4.5.100.201907301734"/>
+		<item value="org.eclipse.tm.terminal.view.feature:4.6.0.202002151945"/>
+		<item value="org.eclipse.userstorage:1.2.0.v20190308-0433"/>
+		<item value="org.eclipse.wst.common.fproj:3.7.2.v201903222010"/>
+		<item value="org.eclipse.wst.jsdt.chromium.debug.feature:0.6.100.v201908270117"/>
+		<item value="org.eclipse.wst.jsdt.feature:2.1.3.v201908270117"/>
+		<item value="org.eclipse.wst.json_ui.feature:1.1.5.v201904210526"/>
+		<item value="org.eclipse.wst.web_ui.feature:3.15.0.v201908192247"/>
+		<item value="org.eclipse.wst.xml_ui.feature:3.15.0.v201907091226"/>
+		<item value="org.jboss.ide.eclipse.archives.feature:3.6.203.v20200204-1121"/>
+		<item value="org.jboss.ide.eclipse.as.archives.integration.feature:3.9.0.v20200225-2112"/>
+		<item value="org.jboss.ide.eclipse.as.feature:3.9.0.v20200225-2112"/>
+		<item value="org.jboss.ide.eclipse.as.jmx.integration.feature:3.9.0.v20200225-2112"/>
+		<item value="org.jboss.ide.eclipse.as.server.rse.integration.feature:3.9.0.v20200204-1121"/>
+		<item value="org.jboss.tools.common.jdt.feature:3.11.0.v20190403-0927"/>
+		<item value="org.jboss.tools.foundation.feature:1.5.4.v20190930-1526"/>
+		<item value="org.jboss.tools.jmx.feature:1.10.7.v20200204-1121"/>
+		<item value="org.jboss.tools.m2e.wro4j.feature:1.1.0.201406251020"/>
+		<item value="org.jboss.tools.maven.apt.feature:1.5.2.201812241535"/>
+		<item value="org.jboss.tools.runtime.core.feature:3.5.1.v20200204-1817"/>
+		<item value="org.jboss.tools.stacks.core.feature:1.4.103.v20200204-1817"/>
+		<item value="org.jboss.tools.usage.feature:2.2.202.v20181101-1129"/>
+		<item value="org.sonarlint.eclipse.feature:4.3.0.12432"/>
+		<item value="org.sonatype.m2e.buildhelper.feature:0.15.0.201207090124"/>
+		<item value="org.sonatype.m2e.egit.feature:0.15.1.201806191431"/>
+		<item value="org.sonatype.m2e.mavenarchiver.feature:0.17.4.201905300046"/>
+	</list>
+	<section name="org.eclipse.ui.dialogs.FilteredResourcesSelectionDialog">
+		<item key="ShowStatusLine" value="true"/>
+		<item key="History" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&#x0D;&#x0A;&lt;History&gt;&#x0D;&#x0A;&lt;historyRootNode&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/web/rest/UsmsContractDebtResource.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/resources/messages_en.properties&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/domain/UsmsMeter.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/service/impl/UsmsPaymentResponsibleServiceImpl.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/domain/UsmsPayment.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/domain/enumeration/PaymentType.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/repository/UsmsContractDebtRepository.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/repository/UsmsContractRepository.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/mysql/domain/HistoryTopupSummaryView.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/web/rest/UsmsPaymentResource.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/resources/hotrod-client.properties&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/service/impl/UsmsPaymentServiceImpl.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/domain/enumeration/CommandSubTask.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/repository/UsmsMeterRepository.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/domain/enumeration/CommandMainTask.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/service/impl/UsmsContractDebtServiceImpl.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/service/impl/UsmsContractServiceImpl.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/request/impl/CuculusRequestImpl.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/spring-mvc-demo1(Form Tags and Data Binding)/WebContent/WEB-INF/view/student-form.jsp&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/spring-mvc-demo1(Form Tags and Data Binding)/WebContent/WEB-INF/view/student-confirmation.jsp&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/spring-mvc-demo1(Form Tags and Data Binding)/src/com/luv2code/springdemo/Student.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;infoNode path=&quot;/smartmetering/src/main/java/com/ericsson/smartmetering/commands/GetTopologyCommand.java&quot; type=&quot;1&quot;/&gt;&#x0D;&#x0A;&lt;/historyRootNode&gt;&#x0D;&#x0A;&lt;/History&gt;"/>
+		<item key="ShowDerived" value="false"/>
+		<item key="FilterByLocation" value="false"/>
+		<item key="WorkingSet" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&#x0D;&#x0A;&lt;workingSet workingSetName=&quot;&quot;/&gt;"/>
+		<section name="DialogBoundsSettings">
+			<item key="DIALOG_HEIGHT" value="1020"/>
+			<item key="DIALOG_WIDTH" value="1920"/>
+			<item key="DIALOG_X_ORIGIN" value="11"/>
+			<item key="DIALOG_Y_ORIGIN" value="11"/>
+			<item key="DIALOG_FONT_NAME" value="1|Segoe UI|9.0|0|WINDOWS|1|-18|0|0|0|400|0|0|0|1|0|0|0|0|Segoe UI"/>
+		</section>
+	</section>
+	<section name="CleanDialogSettings">
+		<item key="DIALOG_X_ORIGIN" value="546"/>
+		<item key="DIALOG_Y_ORIGIN" value="156"/>
+		<item key="DIALOG_WIDTH" value="828"/>
+		<item key="DIALOG_HEIGHT" value="532"/>
+		<item key="TOGGLE_SELECTED" value="false"/>
+	</section>
+	<section name="NewWizardAction">
+		<item key="NewWizardSelectionPage.STORE_SELECTED_ID" value="org.eclipse.jdt.ui.wizards.JavaProjectWizard"/>
+		<list key="NewWizardSelectionPage.STORE_EXPANDED_CATEGORIES_ID">
+			<item value="org.eclipse.jdt.ui.java"/>
+			<item value="org.eclipse.jst.j2ee.internal"/>
+		</list>
+	</section>
+	<section name="ChooseWorkspaceDialogSettings">
+		<item key="DIALOG_X_ORIGIN" value="526"/>
+		<item key="DIALOG_Y_ORIGIN" value="209"/>
+	</section>
+	<section name="WORKBENCH_SETTINGS">
+		<list key="ENABLED_TRANSFERS">
+		</list>
+	</section>
+</section>

@@ -1,0 +1,17 @@
+Spring Security - Select User Roles using Drop-Down List
+
+Question
+
+In the Spring Security Registration example, what if I don't want to set Role default as Employee? Instead I want to take roles from user through registration page using dropdown list.  Then I want to store role data in role table and user data in user table. How can I achieve this?
+
+Answer
+
+I have a solution that covers this scenario. This includes PDF description and source code.
+
+PDF
+
+http://www.luv2code.com/spring-security-multi-role-pdf
+
+Source Code
+
+http://www.luv2code.com/spring-security-multi-role

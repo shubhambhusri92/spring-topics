@@ -1,0 +1,23 @@
+
+­squid:S13194"sThe return type of this method should be an interface such as "Map" rather than the implementation "LinkedHashMap".(­ÓÌøÿÿÿÿ8Ô¢ï².Hì—RMINORZ
+CODE_SMELL
+¶squid:S13198"|The type of the "countryOptions" object should be an interface such as "Map" rather than the implementation "LinkedHashMap".(‰Ê¬úÿÿÿÿ8Ô¢ï².Hë—RMINORZ
+CODE_SMELL
+m
+squid:S106%"9Replace this use of System.out or System.err by a logger.(Ì€ıÅ8àØµã².Hˆ“RMAJORZ
+CODE_SMELL
+m
+squid:S106"9Replace this use of System.out or System.err by a logger.(Ú¢ğÃ8Å½ ï².HÀ—RMAJORZ
+CODE_SMELL
+m
+squid:S106/"9Replace this use of System.out or System.err by a logger.(©ßÿ¶8àØµã².H‡“RMAJORZ
+CODE_SMELL
+r
+squid:S106*"9Replace this use of System.out or System.err by a logger.(Êüğ—ùÿÿÿÿ8•¹ËÌ².Hğ’RMAJORZ
+CODE_SMELL
+r
+squid:S106 "9Replace this use of System.out or System.err by a logger.(©©·öûÿÿÿÿ8æ‹ÊÌ².Hí’RMAJORZ
+CODE_SMELL
+m
+squid:S106"9Replace this use of System.out or System.err by a logger.(ô«ÿ8ûšËÌ².Hï’RMAJORZ
+CODE_SMELL

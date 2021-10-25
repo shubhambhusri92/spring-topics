@@ -1,0 +1,31 @@
+package com.ericsson.smartmetering.repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import com.ericsson.smartmetering.domain.UsmsPayment;
+import com.ericsson.smartmetering.domain.enumeration.PaymentType;
+
+public interface UsmsPaymentRepository extends JpaRepository<UsmsPayment, Long> {
+
+	@Query("SELECT u FROM UsmsPayment u WHERE u.usmsMeter.meterNumber = :meterNumber and u.paymentType =:paymentType order by u.createdDate desc")
+	List<UsmsPayment> findByMeterIdIn(@Param("meterNumber") String meterNumber,
+			@Param("paymentType") PaymentType paymentType);
+
+	List<UsmsPayment> findByPaymentTypeAndUsmsMeterMeterNumberAndCreatedDateBetween(PaymentType paymentType,
+			String meterNumber, LocalDateTime createdDateStart, LocalDateTime createdDateEnd);
+
+	List<UsmsPayment> findByUsmsContractIdAndPaymentSubType(Long contractId, String paymentType);
+
+	/*
+	 * List<UsmsPayment>
+	 * findByUsmsContractIdAndBatchIsNullAndPaymentTypeInOrderByIdDesc(Long
+	 * contractId, List<PaymentType> paymentType);
+	 */
+	@Query("select p from UsmsPayment p join p.debt deb inner join  p.usmsContract c where c.id =:contractId and p.paymentType in :paymentType and deb is not null")
+	List<UsmsPayment> findByUsmsContractIdAndPaymentTypeInOrderByIdDesc(Long contractId, List<PaymentType> paymentType);
+}

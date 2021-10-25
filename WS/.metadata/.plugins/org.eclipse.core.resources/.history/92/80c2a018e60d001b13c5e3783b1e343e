@@ -1,0 +1,21 @@
+package com.ericsson.smartmetering.service.dto;
+
+public class UsmsBalanceTransferSummaryDto {
+
+	private Long id;
+	private String fromMeter;
+	private String toMeter;
+	private String totalAmount;
+	private String monthYear;
+
+	public UsmsBalanceTransferSummaryDto(Long id, String fromMeter, String toMeter, String totalAmount,
+			String monthYear) {
+		super();
+		this.id = id;
+		this.fromMeter = fromMeter;
+		this.toMeter = toMeter;
+		this.totalAmount = totalAmount;
+		this.monthYear = monthYear;
+	}
+
+}

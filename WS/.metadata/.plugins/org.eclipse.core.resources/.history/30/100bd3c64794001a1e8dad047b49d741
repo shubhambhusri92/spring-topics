@@ -1,0 +1,46 @@
+package com.ericsson.smartmetering.domain.enumeration;
+
+public enum CommandMainTask {
+
+	REFILL("Refill"),
+	GET_BALANCE_AND_DATE("GetBalanceAndDate"),
+	ELECTRIC_METER_ON_BOARDING("MeterOnBoarding"),
+	WATER_METER_ON_BOARDING("WaterMeterOnBoarding"),
+	ELECTRIC_METER_ACTIVATION("MeterActivation"),
+	WATER_METER_ACTIVATION("WaterMeterActivation"),
+	METER_SUSPEND("MeterSuspend"),
+	METER_UNSUSPEND("MeterUnsuspend"),
+	INSTALL_SUBSCRIBER("InstallSubscriber"),
+	UPDATE_BALANCE_AND_DATE("UpdateBalanceAndDate"),
+	DELETE_SUBSCRIBER("DeleteSubscriber"),
+	UPDATE_ACCUMULATOR("UpdateAccumulator"),
+	CHANGE_PAYMENT_RESPONSIBLE("ChangePaymentResponsible"),
+	GRACE_NOTIFICATION("GraceNotification"),
+	TOPUP("Topup"),
+	CHANGE_TO_TANSFER_STATE("ChangeToTransferState"), 
+	UNINSTALL_METER("UnInstallMeter"),
+	CHANGE_OWNERSHIP("changeOwnership"),
+	FAULTY_METER_INSTALL("FaultyMeterInstall"),
+	FAULTY_METER_UNINSTALL("FaultyMeterUnInstall"),
+	FAULTY_WATER_METER_INSTALL("FaultyWaterMeterInstall"),
+	FAULTY_WATER_METER_UNINSTALL("FaultyWaterMeterUnInstall"),
+	UPDATE_TEMPORARY_BLOCKED("UpdateTemporaryBlocked"), 
+	METER_ACTIVATION_FAULTY("FaultyMeterActivation"), 
+	METER_ACTIVATION_OWNERSHIP("OwnershipMeterActivation"),
+	CREDIT_CONTROL_EVENT("CreditControlEvent"),
+	ADJUSTMENT("Adjustment"),
+	GET_USAGE_THRESHOLDS_AND_COUNTERS("GetUsageThresholdsAndCounters"),
+	CREDIT_TRANSFER("CreditTransfer")
+	;
+
+	private String mainTaskName;
+
+	private CommandMainTask(String mainTaskName) {
+		this.mainTaskName = mainTaskName;
+	}
+
+	public String getMainTaskName() {
+		return this.mainTaskName;
+	}
+
+}

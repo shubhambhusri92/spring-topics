@@ -1,0 +1,587 @@
+package com.ericsson.smartmetering.service.impl;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import javax.transaction.Transactional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+
+import com.ericsson.smartmetering.cache.CacheProvider;
+import com.ericsson.smartmetering.commands.Command;
+import com.ericsson.smartmetering.commands.CommandResponse;
+import com.ericsson.smartmetering.commands.executor.CommandExecutorService;
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.config.ValueConstant;
+import com.ericsson.smartmetering.domain.UsmsContract;
+import com.ericsson.smartmetering.domain.UsmsContractDebt;
+import com.ericsson.smartmetering.domain.UsmsDaMaster;
+import com.ericsson.smartmetering.domain.UsmsMeter;
+import com.ericsson.smartmetering.domain.enumeration.AuxRequestParam;
+import com.ericsson.smartmetering.domain.enumeration.CommandMainTask;
+import com.ericsson.smartmetering.domain.enumeration.CommandSubTask;
+import com.ericsson.smartmetering.domain.enumeration.ContractStatus;
+import com.ericsson.smartmetering.domain.enumeration.DebtClearanceModel;
+import com.ericsson.smartmetering.domain.enumeration.ErrorMessage;
+import com.ericsson.smartmetering.domain.enumeration.LanguageEnum;
+import com.ericsson.smartmetering.domain.enumeration.MainTaskUseCase;
+import com.ericsson.smartmetering.domain.enumeration.MeterStatus;
+import com.ericsson.smartmetering.domain.enumeration.PaymentType;
+import com.ericsson.smartmetering.repository.UsmsContractDebtRepository;
+import com.ericsson.smartmetering.repository.UsmsContractRepository;
+import com.ericsson.smartmetering.repository.UsmsMeterRepository;
+import com.ericsson.smartmetering.request.DedicatedAccountUpdateInformation;
+import com.ericsson.smartmetering.request.SmartMeterRequest;
+import com.ericsson.smartmetering.request.impl.SmartMeterRequestImpl;
+import com.ericsson.smartmetering.service.NotificationService;
+import com.ericsson.smartmetering.service.UsmsContractDebtService;
+import com.ericsson.smartmetering.service.UsmsPaymentService;
+import com.ericsson.smartmetering.service.dto.AccountDetailsDTO;
+import com.ericsson.smartmetering.service.dto.CreateOrUpdateDebtModelDTO;
+import com.ericsson.smartmetering.service.dto.PaymentDetailDTO;
+import com.ericsson.smartmetering.service.dto.UsmsContractDebtDTO;
+import com.ericsson.smartmetering.service.util.CommandUtil;
+import com.ericsson.smartmetering.service.util.DateTimeUtil;
+import com.ericsson.smartmetering.service.util.MessageSourceUtil;
+import com.ericsson.smartmetering.service.util.NumberUtil;
+import com.ericsson.smartmetering.service.util.ObjectMapperUtils;
+import com.ericsson.smartmetering.service.util.RequestUtil;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+import com.ericsson.smartmetering.web.rest.vm.DebtModelHistoryVM;
+import com.ericsson.smartmetering.web.rest.vm.PaymentModel;
+import com.ericsson.smartmetering.web.rest.vm.SelfCareMeterDataResponse;
+
+
+@Service
+@Transactional
+public class UsmsContractDebtServiceImpl implements UsmsContractDebtService {
+
+	private final Logger log = LoggerFactory.getLogger(UsmsContractDebtServiceImpl.class);
+
+	@Autowired
+	private UsmsContractDebtRepository usmsContractDebtRepository;
+
+	@Autowired
+	private UsmsMeterRepository usmsMeterRepository;
+
+	private final UsmsPaymentService usmsPaymentService;
+
+	private final CommandExecutorService executorService;
+
+	@Autowired
+	private UsmsMeterRepository meterRepository;
+
+	@Autowired
+	private UsmsContractRepository usmsContractRepository;
+	
+	private final NotificationService notificationService;
+	
+	private final MessageSourceUtil messageSourceUtil;
+
+	public UsmsContractDebtServiceImpl(CommandExecutorService executorService,
+			UsmsPaymentService usmsPaymentService,
+			NotificationService notificationService, MessageSourceUtil messageSourceUtil) {
+		this.executorService = executorService;
+		this.usmsPaymentService = usmsPaymentService;
+		this.notificationService = notificationService;
+		this.messageSourceUtil = messageSourceUtil;
+	}
+
+	@Override
+	public UsmsContractDebtDTO getUsmsContractDebtByContractId(Long contractId) throws SmartMeteringException {
+		UsmsContractDebtDTO contractDebt = new UsmsContractDebtDTO();
+		UsmsContractDebt usmsContractDebt = usmsContractDebtRepository.findByContractId(contractId);
+		BeanUtils.copyProperties(usmsContractDebtRepository.findByContractId(contractId), contractDebt);
+		return contractDebt;
+	}
+
+	@Override
+	public UsmsContractDebt updateDebt(AccountDetailsDTO accountDetails, CreateOrUpdateDebtModelDTO debtModel)
+			throws SmartMeteringException, NoSuchFieldException {
+
+		log.debug("Entered :: UsmsContractDebtServiceImpl :: updateDebt");
+		
+		Optional<UsmsMeter> meterOpt = usmsMeterRepository.findById(accountDetails.getMeterId());
+		log.debug("found meter: {}, from meterId: {}", meterOpt, accountDetails.getMeterId());
+		log.info("Request received for DebtModel {}", debtModel);
+		
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "UsmsMeter");
+		
+		UsmsMeter meter = meterOpt.get();
+		UsmsContract contract = meter.getUsmsContracts().stream()
+				.filter(cont -> cont.getStatus() == ContractStatus.ACTIVE).findAny().get();
+		
+		Optional<UsmsContractDebt> debtOpt = Optional.empty();
+		if (!CollectionUtils.isEmpty(contract.getUsmsContractDebts())) {
+			debtOpt = contract.getUsmsContractDebts().stream().filter(debt -> debt.getIsValid()).findAny();
+		}
+		
+		SmartMeterRequest request = executeCommandsToSetDebtModel(debtModel, meter);
+
+		LanguageEnum custLanguage = contract.getPaymentResponsible().getLanguage();
+		UsmsContractDebt debt = getNewDebtObject(accountDetails, debtModel, contract);
+
+		if (debtOpt.isPresent())
+			debtOpt.get().setIsValid(Boolean.FALSE);
+		
+		usmsContractDebtRepository.save(debt);
+		
+		sendMessage(accountDetails, (String) request.getAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE), 
+				debtModel, null, custLanguage);
+		return debt;
+	}
+
+	/**
+	 * This method would execute the commands to OCS to set new debt Model defined for the customer.
+	 */
+	private SmartMeterRequest executeCommandsToSetDebtModel(CreateOrUpdateDebtModelDTO debtModel, UsmsMeter meter)
+			throws NoSuchFieldException, SmartMeteringException {
+		
+		log.debug("Entered:: UsmsContractServiceImpl:: executeCommandsToSetDebtModel");
+		SmartMeterRequest request = executeUBAD(getDaInfos(debtModel), null, meter.getMsisdn(), debtModel);
+		CommandSubTask commandName = CommandSubTask.UPDATE_BALANCE_AND_DATE;
+		Command command = request.getExecutedCommand(commandName);
+		CommandResponse response = CommandUtil.getCommandSuccessResponse(command, commandName.name(), 
+				String.valueOf(meter.getMsisdn()));
+		log.debug("UBAD response Status {}", response.getStatus());
+		return request;
+	}
+
+	/**
+	 * This method would return new debt object to be saved in the database.
+	 */
+	private UsmsContractDebt getNewDebtObject(AccountDetailsDTO accountDetails, CreateOrUpdateDebtModelDTO debtModel,
+			UsmsContract contract) {
+		log.debug("Entered:: UsmsContractServiceImpl:: getNewDebtObject");
+		
+		UsmsContractDebt debt = new UsmsContractDebt();
+		
+		Integer debtClearingPeriod = debtModel.getNewDebtClearingPeriod() == null ? debtModel.getDebtClearingPeriod() 
+					: debtModel.getNewDebtClearingPeriod();
+		Float deductionAmount = debtModel.getNewDeductionAmount() == null ? debtModel.getDeductionAmount() 
+					: debtModel.getNewDeductionAmount();
+		DebtClearanceModel model = debtModel.getNewDebtClearingMethod() == null ? debtModel.getDebtClearingMethod()
+					: debtModel.getNewDebtClearingMethod();
+		
+		Float debtAdjusted = debtModel.getDebtAdjusted();
+		
+		if (debtModel.getNewDebtAmount() != null)														// change in debt amount
+			debt.setOpenDebtAmount(debtModel.getNewDebtAmount());
+		else if (debtModel.getDebtAdjusted() == null && debtModel.getDebtUpdationType() == null)		// redefine debt model
+			debt.setOpenDebtAmount(accountDetails.getDebtAmount());
+		else																							// first time debt define
+			debt.setOpenDebtAmount(debtModel.getDebtAdjusted());
+		
+		if (debtModel.getDebtUpdationType() != null && USMSConstants.DEBIT.equals(debtModel.getDebtUpdationType())
+				&& debtModel.getDebtAdjusted() != null) {
+			debtAdjusted = debtAdjusted * -1;
+		}
+
+		debt.setDebtAdjusted(debtAdjusted);
+		
+		debt.setDebtClearingMethod(model);
+		debt.setDebtClearingPeriod(debtClearingPeriod);
+		debt.setDeductionAmount(deductionAmount);	
+		debt.setIsValid(Boolean.TRUE);
+		debt.setOrigDebtAmount(debtModel.getOriginalDebtAmount());
+		debt.setUsmsContract(contract);
+		debt.setDebtAdjustedType(USMSConstants.UPDATE_DEBT_MODEL);
+		
+		if(debtModel.getReasonForAdjustment().equalsIgnoreCase(USMSConstants.OTHER))
+			debt.setReasonForAdjustment(debtModel.getOtherReason());
+		else
+			debt.setReasonForAdjustment(debtModel.getReasonForAdjustment());
+
+		log.info("Debt entity to save {}", debt);
+		log.debug("Exit:: UsmsContractServiceImpl:: getNewDebtObject");
+		return debt;
+	}
+
+	private void setTransactionTypeAndCode(CreateOrUpdateDebtModelDTO debtModel, SmartMeterRequest request) {
+		
+		String transactionType = null; 
+		String transactionCode = null; 
+		String model = debtModel.getDebtClearingMethod() != null ? debtModel.getDebtClearingMethod().name() : null;
+		Long newDeductionAmount = RequestUtil.toAIR(debtModel.getNewDeductionAmount());
+		Long newDebtClearingPeriod = RequestUtil.toAIR(debtModel.getNewDebtClearingPeriod());
+		DebtClearanceModel newDebtModel = debtModel.getNewDebtClearingMethod();
+		
+		if (model != null && newDebtModel != null) {
+			model += "_TO_" + newDebtModel.name();
+		} else if (newDebtModel != null) {
+			model = newDebtModel.name();
+		}
+		
+		if (newDebtModel == null) {
+			
+			transactionType = ValueConstant.ADJUSTDEBT;
+			transactionCode = String.valueOf(RequestUtil.toAIR(debtModel.getDebtAdjusted()));
+		} else if (model.equalsIgnoreCase(USMSConstants.FIXED_TO_FIXED_MODEL)) {
+			
+			if (newDebtClearingPeriod == null) {
+				transactionType = ValueConstant.ADJUSTFIXEDAMOUNT;
+				transactionCode = String.valueOf(newDeductionAmount);
+			} else if (newDeductionAmount == null) {
+				transactionType = ValueConstant.ADJUSTFIXEDPERIOD;
+				transactionCode = String.valueOf(newDebtClearingPeriod);
+			} else {
+				transactionType = ValueConstant.ADJUSTFIXEDMODEL;
+				transactionCode = "AMOUNT" + newDeductionAmount + "PR" + newDebtClearingPeriod;
+			}
+		} else if (model.equalsIgnoreCase(DebtClearanceModel.FIXED.name())) {
+			
+			transactionType = ValueConstant.ADJUSTFIXEDMODEL;
+			transactionCode = "AMOUNT" + newDeductionAmount +"PR"+ newDebtClearingPeriod;
+		} else if (model.equalsIgnoreCase(USMSConstants.FIXED_TO_PERCENT_MODEL)) {
+			
+			transactionType = ValueConstant.CHANGEFXTOPRMODEL;
+			transactionCode = String.valueOf(newDeductionAmount);
+		} else if (model.equalsIgnoreCase(USMSConstants.PERCENT_TO_FIXED_MODEL)) {
+			
+			transactionType = ValueConstant.CHANGEPRTOFXMODEL;
+			transactionCode = "AMOUNT" + newDeductionAmount + "PR" + newDebtClearingPeriod;
+		} else if (model.equalsIgnoreCase(DebtClearanceModel.PERCENTAGE.name()) 
+					|| model.equalsIgnoreCase(USMSConstants.PERCENT_TO_PERCENT_MODEL)) {
+			
+			transactionType = ValueConstant.ADJUSTDEBTCLEARINGPR;
+			transactionCode = String.valueOf(newDeductionAmount);
+		}
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE, transactionType);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, transactionCode);
+	}
+
+	private SmartMeterRequest executeUBAD(DedicatedAccountUpdateInformation[] daInfos, String transactionCode, Long msisdn, 
+				CreateOrUpdateDebtModelDTO debtModel) {
+		
+		SmartMeterRequest request = new SmartMeterRequestImpl();
+		
+		if (debtModel != null) {
+			
+			setTransactionTypeAndCode(debtModel, request);
+		} else {
+			
+			request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE, ValueConstant.ADJUSTDEBT);
+			request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, transactionCode);
+		}
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.DEBT);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.DA_INFOS, daInfos);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, msisdn);
+		executorService.execute(CommandMainTask.UPDATE_BALANCE_AND_DATE, request);
+		return request;
+	}
+
+	@SuppressWarnings("unchecked")
+	private DedicatedAccountUpdateInformation[] getDaInfos(CreateOrUpdateDebtModelDTO debtModel) throws NoSuchFieldException {
+		
+		DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformationList = null;
+		String model = debtModel.getDebtClearingMethod() != null ? debtModel.getDebtClearingMethod().name() : null;
+		Long newDeductionAmount = RequestUtil.toAIR(debtModel.getNewDeductionAmount());
+		Long newDebtClearingPeriod = RequestUtil.toAIR(debtModel.getNewDebtClearingPeriod());
+		Long debtAjusted = RequestUtil.toAIR(debtModel.getDebtAdjusted());
+		DebtClearanceModel newDebtModel = debtModel.getNewDebtClearingMethod();
+		List<UsmsDaMaster> daList = null;
+		
+		//Set Model Name
+		if (model != null && newDebtModel != null) {
+			model += "_TO_" + newDebtModel.name();
+		} else if (newDebtModel != null) {
+			model = newDebtModel.name();
+		}
+		boolean isDebtAndModelModified = model.indexOf("_TO_") > 0 && !StringUtils.isEmpty(debtModel.getDebtUpdationType());
+		
+		// Set debt amount if model is either FIXED or PERCENTAGE
+		if (debtAjusted == null && newDebtModel != null && model.equals(newDebtModel.name())) {
+			debtAjusted = RequestUtil.toAIR(debtModel.getOriginalDebtAmount());
+		}
+		
+		// Set daList if model is defined or redefined.
+		if (newDebtModel != null) {
+			daList = (List<UsmsDaMaster>) CacheProvider.getValueFromCache(USMSConstants.ODC_DA_PREFIX + model, log);
+		}
+		
+		if (!CollectionUtils.isEmpty(daList) || newDebtModel == null) {
+			
+			// If debt is adjusted.
+			if (debtAjusted != null && debtModel.getDebtUpdationType() != null 
+					&& USMSConstants.DEBIT.equalsIgnoreCase(debtModel.getDebtUpdationType()))
+				debtAjusted *= -1;
+			
+			List<DedicatedAccountUpdateInformation> dedicatedAccountList = new ArrayList<>();
+			
+			populateDAsWithModelDetails(newDebtClearingPeriod, newDeductionAmount, dedicatedAccountList, daList, 
+					debtAjusted);
+			
+			updateDebtAmount(dedicatedAccountList, isDebtAndModelModified, debtAjusted, daList);
+			dedicatedAccountUpdateInformationList = dedicatedAccountList.toArray(new DedicatedAccountUpdateInformation[0]);
+		}
+		return dedicatedAccountUpdateInformationList;
+	}
+
+	/**
+	 * @param dedicatedAccountUpdateInformationList
+	 * @param isDebtAndModelModified
+	 * @param daList
+	 * @param amount
+	 * @param i
+	 * @throws NoSuchFieldException
+	 */
+	@SuppressWarnings("unchecked")
+	private void updateDebtAmount(List<DedicatedAccountUpdateInformation> dedicatedAccountUpdateInformationList,
+			boolean isDebtAndModelModified, Long amount, List<UsmsDaMaster> daList)
+			throws NoSuchFieldException {
+		
+		if (isDebtAndModelModified || daList == null) {
+			
+			String debtString = USMSConstants.DEBT_ODC_TYPE;
+			List<UsmsDaMaster> debtDA = (List<UsmsDaMaster>) CacheProvider
+					.getValueFromCache(USMSConstants.ODC_DA_PREFIX + debtString, log);
+			
+			if (!CollectionUtils.isEmpty(debtDA)) {
+				for (UsmsDaMaster usmsDaMaster : debtDA) {
+					DedicatedAccountUpdateInformation dedicatedAccountUpdateInformation = new DedicatedAccountUpdateInformation();
+					dedicatedAccountUpdateInformation
+						.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitType());
+					dedicatedAccountUpdateInformation.setDedicatedAccountID(usmsDaMaster.getDaId());
+					dedicatedAccountUpdateInformation.setAdjustmentAmountRelative(String.valueOf(amount));
+					dedicatedAccountUpdateInformationList.add(dedicatedAccountUpdateInformation);
+				}
+			}
+		}
+	}
+
+	/**
+	 * @param debtClearingPeriod
+	 * @param deductionAmount
+	 * @param dedicatedAccountUpdateInformationList
+	 * @param daList
+	 * @param amount
+	 * @return
+	 */
+	private void populateDAsWithModelDetails(Long debtClearingPeriod, Long deductionAmount,
+			List<DedicatedAccountUpdateInformation> dedicatedAccountUpdateInformationList, List<UsmsDaMaster> daList,
+			Long amount) {
+		
+		if (daList != null) {
+
+			for (UsmsDaMaster usmsDaMaster : daList) {
+
+				DedicatedAccountUpdateInformation dedicatedAccountUpdateInformation = new DedicatedAccountUpdateInformation();
+				
+				if (deductionAmount != null && USMSConstants.DEDUCTION_AMOUNT.equalsIgnoreCase(usmsDaMaster.getDaValue())) {
+					dedicatedAccountUpdateInformation.setDedicatedAccountValueNew(String.valueOf(deductionAmount));
+				} else if (debtClearingPeriod != null && usmsDaMaster.getDaValue().toLowerCase().indexOf("period") != -1) {
+					dedicatedAccountUpdateInformation.setDedicatedAccountValueNew(String.valueOf(debtClearingPeriod));
+				} else if (ValueConstant.ZERO.equalsIgnoreCase(usmsDaMaster.getDaValue())) {
+					dedicatedAccountUpdateInformation.setDedicatedAccountValueNew(usmsDaMaster.getDaValue());
+				} else if (amount != null && USMSConstants.DEBT_AMOUNT.equalsIgnoreCase(usmsDaMaster.getDaValue())) {
+					dedicatedAccountUpdateInformation.setAdjustmentAmountRelative(String.valueOf(amount));
+				} else {
+					continue;
+				}
+				dedicatedAccountUpdateInformation.setDedicatedAccountID(usmsDaMaster.getDaId());
+				dedicatedAccountUpdateInformation.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitType());
+				dedicatedAccountUpdateInformationList.add(dedicatedAccountUpdateInformation);
+			}
+		}
+	}
+	
+	@SuppressWarnings("unchecked")
+	private DedicatedAccountUpdateInformation[] getDaInfos(DebtClearanceModel model, Float amount)
+			throws NoSuchFieldException {
+		DedicatedAccountUpdateInformation[] dedicatedAccountUpdateInformationList = new DedicatedAccountUpdateInformation[1];
+		List<UsmsDaMaster> daList = (List<UsmsDaMaster>) CacheProvider
+				.getValueFromCache(USMSConstants.ODC_DA_PREFIX + model, log);
+		if (!CollectionUtils.isEmpty(daList)) {
+			amount *= -1;
+			dedicatedAccountUpdateInformationList = new DedicatedAccountUpdateInformation[1];
+			for (UsmsDaMaster usmsDaMaster : daList) {
+				if (USMSConstants.DEBT_AMOUNT.equalsIgnoreCase(usmsDaMaster.getDaValue())) {
+					DedicatedAccountUpdateInformation dedicatedAccountUpdateInformation = new DedicatedAccountUpdateInformation();
+					dedicatedAccountUpdateInformation.setDedicatedAccountID(usmsDaMaster.getDaId());
+					dedicatedAccountUpdateInformation.setDedicatedAccountUnitType(RequestUtil.getDedicatedAccountUnitType());
+					dedicatedAccountUpdateInformation.setAdjustmentAmountRelative(String.valueOf(RequestUtil.toAIR(amount)));
+					dedicatedAccountUpdateInformationList[0] = dedicatedAccountUpdateInformation;
+					break;
+				}
+			}
+		}
+		return dedicatedAccountUpdateInformationList;
+	}
+
+	@Override
+	public Map<String, Object> paymentAgainstDebt(AccountDetailsDTO accountDetail, PaymentDetailDTO paymentDetail)
+			throws SmartMeteringException, NoSuchFieldException {
+		
+		log.debug("payment agains debt request, account: {}, payment: {}, type: {}", accountDetail, paymentDetail);
+		
+		List<UsmsMeter> meterList = meterRepository.findByMeterNumber(accountDetail.getMeterNumber());
+		log.debug("meter: {} found against meter number: {}", meterList, accountDetail.getMeterNumber());
+		if (CollectionUtils.isEmpty(meterList))
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "Meter");
+		
+		Optional<UsmsMeter> meterOpt = meterList.stream().filter(mtr -> mtr.getStatus() == MeterStatus.ACTIVE).findFirst();
+		
+		if (!meterOpt.isPresent())
+			throw new SmartMeteringException(ErrorMessage.METER_NUMBER_NOT_ACTIVE, "for msisdn " + accountDetail.getMeterNumber() + " ");
+		log.debug("meter: {} fount against meter number: {}", meterOpt, accountDetail.getMeterNumber());
+		
+		UsmsMeter meter = meterOpt.get();
+		UsmsContract usmsContract = meter.getUsmsContracts().stream()
+				.filter(contract -> contract.getStatus() == ContractStatus.ACTIVE).findAny().get();
+		UsmsContractDebt debtDetail = usmsContract.getUsmsContractDebts().stream()
+				.filter(debt -> debt.getIsValid()).findAny().get();
+		Float amount = paymentDetail.getAmount();
+		String payment = String.valueOf(RequestUtil.toAIR(amount));
+		SmartMeterRequest request = executeUBAD(getDaInfos(debtDetail.getDebtClearingMethod(), amount), 
+					payment, meter.getMsisdn(), null);
+		LanguageEnum custLanguage = usmsContract.getPaymentResponsible().getLanguage();
+		log.debug("Is payment against debt successfull from AIR: {}", request.isRequestExecutedSuccessfully());
+		SelfCareMeterDataResponse response = getMeterInfoFromUBAD(request, meter, new HashMap<Integer, Float>());
+		
+		response.setMeterId(meter.getMeterNumber());
+		response.setMeterStatus(meter.getStatus().name());
+
+		sendMessage(accountDetail, (String) request.getAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_TYPE)
+				, null, paymentDetail, custLanguage);
+		return usmsPaymentService.payment(accountDetail, paymentDetail, response, meter, PaymentType.DEBT, 
+				RequestUtil.getOriginHostName(false), null);
+	}
+
+	private SelfCareMeterDataResponse getMeterInfoFromUBAD(SmartMeterRequest request, UsmsMeter meter,
+			Map<Integer, Float> maxVal) throws SmartMeteringException {
+		CommandSubTask command = CommandSubTask.UPDATE_BALANCE_AND_DATE;
+		SelfCareMeterDataResponse response = null;
+		Command ubad = request.getExecutedCommand(command);
+		CommandResponse res = CommandUtil.getCommandSuccessResponse(ubad, command.name(), 
+					String.valueOf(request.getAuxiliaryRequestParameter(AuxRequestParam.MSISDN)));
+		Optional<UsmsContract> contOpt = meter.getUsmsContracts().stream()
+				.filter(contract -> ContractStatus.ACTIVE == contract.getStatus()).findAny();
+		
+		if (contOpt.isPresent()) {
+			
+			UsmsContract contract = contOpt.get();
+			Optional<UsmsContractDebt> debtOpt = contract.getUsmsContractDebts().stream()
+					.filter(debt -> debt.getIsValid()).findAny();
+			DebtClearanceModel mode = null;
+			
+			if (debtOpt.isPresent())
+				mode = debtOpt.get().getDebtClearingMethod();
+			
+			response = CommandUtil.processGBADResponseForMeterDetails(res, contract.getUsmsPackage().getId(),
+					contract.getUsmsPackage().getCustomerType(), mode.name(), "dedicatedAccountChangeInformation",
+					maxVal, meter.getMeterType());
+			response.setCustomerType(contract.getUsmsPackage().getCustomerType());
+		}
+		return response;
+	}
+
+	@Override
+	public PaymentModel getDebtDetails(Long meterId) throws SmartMeteringException {
+		
+		PaymentModel payment = new PaymentModel();
+		Predicate<UsmsContract> isContractActive = cont -> cont.getStatus() == ContractStatus.ACTIVE;
+        Predicate<UsmsContract> isContractSuspend = cont -> cont.getStatus() == ContractStatus.SUSPEND;
+        
+        payment.setAccountDetails(usmsPaymentService.getAccountDetails(meterId));
+		UsmsMeter meter = usmsMeterRepository.getOne(meterId);
+		Optional<UsmsContract> contractOpt = meter.getUsmsContracts().stream().filter(isContractActive.or(
+					isContractSuspend)).findAny();
+		
+		if (contractOpt.isPresent()) {
+			Optional<UsmsContractDebt> debtOpt = contractOpt.get().getUsmsContractDebts().stream().filter(
+						debt -> debt.getIsValid()).findAny();
+			if (debtOpt.isPresent()) {
+				UsmsContractDebt debt = debtOpt.get();
+				CreateOrUpdateDebtModelDTO debtModel = new CreateOrUpdateDebtModelDTO();
+				debtModel.setOriginalDebtAmount(debt.getOrigDebtAmount());
+				debtModel.setDebtClearingMethod(debt.getDebtClearingMethod());
+				debtModel.setDebtClearingPeriod(debt.getDebtClearingPeriod());
+				debtModel.setDeductionAmount(debt.getDeductionAmount());
+				payment.setDebtModel(debtModel);
+			}
+		}
+		return payment;
+	}
+	
+	private void sendMessage(AccountDetailsDTO account, String transactionType, CreateOrUpdateDebtModelDTO debt,
+			PaymentDetailDTO paymentDetail, LanguageEnum custLanguage) {
+		
+		String message = null;
+		if (ValueConstant.ADJUSTDEBT.equalsIgnoreCase(transactionType)) {
+			double amount = 0;
+			if (debt != null && "credit".equalsIgnoreCase(debt.getDebtUpdationType())) {
+				amount = account.getDebtAmount() + debt.getDebtAdjusted();
+			} else if (debt != null && "debit".equalsIgnoreCase(debt.getDebtUpdationType())) {
+				amount = account.getDebtAmount() - debt.getDebtAdjusted();
+			} else if (paymentDetail != null) {
+				amount = account.getDebtAmount() - paymentDetail.getAmount();
+			}
+			message = messageSourceUtil.getMessage("adjust.odc.amount", custLanguage,
+					ew Object[] { amount, LocalDateTime.now(), account.getMeterType(), account.getMeterNumber() });
+		} else if (ValueConstant.ADJUSTFIXEDMODEL.equalsIgnoreCase(transactionType)) {
+			message = messageSourceUtil.getMessage("debt.type.fixed",  custLanguage, 
+					new Object[] {debt.getNewDeductionAmount(), debt.getNewDebtClearingPeriod(),
+							account.getMeterType(), account.getMeterNumber() });
+		} else if (ValueConstant.CHANGEFXTOPRMODEL.equalsIgnoreCase(transactionType)) {
+			message = messageSourceUtil.getMessage("fixed.to.percentage",  custLanguage, 
+					new Object[] {  debt.getNewDeductionAmount(), LocalDateTime.now(), 
+							account.getMeterType(), account.getMeterNumber()});
+		} else if (ValueConstant.CHANGEPRTOFXMODEL.equalsIgnoreCase(transactionType)) {
+			message = messageSourceUtil.getMessage("percentage.to.fixed",  custLanguage,
+					new Object[] { debt.getNewDeductionAmount(), debt.getNewDebtClearingPeriod(), 
+							LocalDateTime.now(), account.getMeterType(), account.getMeterNumber()});
+		} else if (ValueConstant.ADJUSTDEBTCLEARINGPR.equalsIgnoreCase(transactionType)) {
+			message = messageSourceUtil.getMessage("debt.type.percentage",  custLanguage,
+					new Object[] { debt.getNewDeductionAmount(),  LocalDateTime.now(), account.getMeterType(),
+					account.getMeterNumber()});
+		}
+		notificationService.sendMessageToCIS(RequestUtil.getTransactionId(), RequestUtil.getTransactionTime(), message,
+				String.valueOf(account.getPrMobileNo()));
+	}
+
+	@Override
+	public List<DebtModelHistoryVM> getDebModeltHistory(String meterNumber) {
+		log.debug("Entered :: UsmsContractDebtServiceImpl :: getDebModeltHistory");
+		Optional<UsmsContract> contractOpt = usmsContractRepository
+				.findByStatusAndmeterNumber(Arrays.asList(ContractStatus.ACTIVE, ContractStatus.SUSPEND), meterNumber);
+		List<DebtModelHistoryVM> debtHistory = new ArrayList<>(0);
+
+		if (contractOpt.isPresent()) {
+
+			Long contractId = contractOpt.get().getId();
+			log.info("Active Contract with id : {}, found for passed meter Number - {}", contractId, meterNumber);
+			
+			List<UsmsContractDebt> debtObjects = usmsContractDebtRepository.findAllByUsmsContractIdAndDebtAdjustedTypeInOrderByIdDesc(
+						contractId, USMSConstants.UPDATE_DEBT_MODEL);
+			
+			if (!CollectionUtils.isEmpty(debtObjects)) {
+				log.info("Debt History Count is: {}", debtObjects.size());
+				debtHistory = debtObjects.stream()
+						.map(entity -> {
+							DebtModelHistoryVM historyObject = ObjectMapperUtils.map(entity, DebtModelHistoryVM.class);
+							historyObject.setCreatedDateInStr(DateTimeUtil.getFormattedTime(entity.getCreatedDate(),
+									DateTimeUtil.DATE_FORMATTER_WITH_TIME));
+							historyObject.setDebtAdjusted(NumberUtil.convertToTwoDecimalPlaces(entity.getDebtAdjusted()));
+							return historyObject;
+						}).collect(Collectors.toList());
+			}
+		}
+		log.debug("Exit :: UsmsContractDebtServiceImpl :: getDebModeltHistory");
+		return debtHistory;
+	}
+
+}

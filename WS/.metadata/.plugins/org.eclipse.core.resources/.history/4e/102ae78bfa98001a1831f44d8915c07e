@@ -1,0 +1,32 @@
+account.create="Your account has been created with username  : {0}"
+workorder.create="Pelanggan yang dihormati, permohonan pendaftaran meter pintar USMS awda telah diterima. Sila nyatakan Ref no {0} untuk tujuan penjejakan dengan Penyedia Utiliti"
+meter.active="Pelanggan yang dihormati, meter pintar USMS awda telah diaktifkan. Sila nyatakan ID Meter awda {0} untuk tujuan komunikasi dengan Penyedia Utiliti awda."
+meter.active.second="Pelanggan yang dihormati, sila tambah nilai akaun meter pintar awda dalam masa 36 jam untuk mengelakkan gangguan perkhidmatan. Utiliti - {0}. Meter ID - {1}"
+normal.cust.topup.withoutdebt="Pelanggan yang dihormati, terima kasih kerana membeli kredit BND{0} credit. Utiliti - {1}.MeterID -{2}"
+normal.cust.topup.withdebt="Pelanggan yang dihormati, terima kasih kerana membeli kredit BND{0} credit. BND{1}disalaraskan dengan baki tertunggak awda. BND{2} telah dikreditkan ke akaun awda.Baki semasa awda ialah BND{3}  Utiliti - {4}.MeterID -{5}"
+special.cust.topup=" Pelanggan yang dihormati, terima kasih kerana membeli kredit BND{0} credit. Utiliti - {1}.MeterID -{2}"
+payment.responsible.change="Pelanggan yang dihormati, permintaan untuk permindahan {0} Meter Id{1}berjaya diselesaikan. Sila tambah nilai meter awda melalui www.usms.com.bn atau kunjungi mana-mana kaunter DST. Sila nyatakan ID Meter awda {2} untuk berkomunikasi dengan peyedia utiliti awda."
+credit.transfer="Pelanggan yang dihormati, permintaan penangguhan perkhidmatan awda untuk {0} Meter Id{1} berjaya diproses"
+meter.suspension.status="Pelanggan yang dihormati, permintaan penangguhan perkhidmatan awda untuk {0} Meter Id{1} berjaya diproses"
+meter.resumption.status ="Pelanggan yang dihormati, permintaan penyambungan semula untuk {0} Meter Id{1} berjaya diproses"
+payment.responsible.update="Pelanggan yang dihormati, butiran awda telah di kemas kini. Sila tambah nilai meter anda menggunakan portal atau mengunjungi mana-mana kaunter untuk menikmati perkhidmatan tanpa gangguan. Sila nyatakan ID Meter awda {0} untuk berkomunikasi dengan penyedia utiliti awda. Utility - {1}. Meter ID - {2}"
+debt.type.fixed="Pelanggan yang dihormati, Jumlah pembayaran untuk hutang tertunggak awda adalah {0}/ bulan selama {1} bulan". Utiliti - {2}. Meter ID - {3}"
+debt.type.percentage="Pelanggan yang terhormat, pembayaran untuk hutang tertunggak awda adalah {0}% dari setiap tambah nilai pada {1}. Utiliti - {2}. ID Meter - {3}"
+fixed.to.percentage="Pelanggan yang terhormat, pembayaran untuk hutang tertunggak awda adalah {0}% dari setiap tambah nilai pada {1}. Utiliti - {2}. ID Meter - {3}"
+percentage.to.fixed="Pelanggan yang terhormat, Jumlah pembayaran baru untuk hutang tertunggak awda adalah {0} / bulan selama {1} bulan "pada {2}. Utiliti - {3}. ID Meter - {4}"
+
+adjust.odc.amount="Dear Customer, your Oustanding debt for {0} Meter Id {1} is BND {2} as of {3}"
+route.exception={0} connection issue(BR)
+not.found={0} not found (BR).
+update.failed=failed to update - {0}, id - {1} (BR)
+create.error=Error while creating {0} (BR)
+validation.failed=Please provide valid inputs for field(s): \n {0}
+already.exist={0}: {1} already exist (BR)
+air.failure.response=Failure response from {0}
+meter.install="(MY)Dear Customer, Onboarding of {0} Meter Id {1} is successfully completed. Meter is associated with Customer Id {2}. Please use this Customer Id for any communication with your utility provider."
+change.transfer.state="(MY)Dear customer, Your request for transfer of {0} Meter Id {1} is successfully processed"
+payment.done= (MY)payment has been done of meter number : {0}
+meter.activation.failed=Meter Activation failed for contract number {0}
+
+
+

@@ -1,0 +1,57 @@
+package com.luv2code.hibernate.demo;
+
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.cfg.Configuration;
+import org.hibernate.query.Query;
+
+import com.luv2code.hibernate.demo.entity.Course;
+import com.luv2code.hibernate.demo.entity.Instructor;
+import com.luv2code.hibernate.demo.entity.InstructorDetail;
+
+public class FetchJoinDemo {
+
+	public static void main(String[] args) {
+
+		// create Session Factory
+		// Session Factory created only once per application
+
+		// addAnnotatedClass : these are the entity classes which hibernate should know
+		// about them and load them and make them available
+		SessionFactory factory = new Configuration().configure("hibernate.cfg.xml").addAnnotatedClass(Instructor.class)
+				.addAnnotatedClass(Course.class).addAnnotatedClass(InstructorDetail.class).buildSessionFactory();
+
+		// create Session
+		// sessions can be created n number of times as per our use
+		Session session = factory.getCurrentSession();
+
+		try {
+
+			session.beginTransaction();
+			int theId = 2;
+
+			Query<Instructor> query = session.createQuery(
+					"select i from Instructor i" + "JOIN FETCH i.courses " + "where i.id=:theInstructorId",
+					Instructor.class);
+
+			// set parameter on the query
+			query.setParameter("theInstructorId", theId);
+
+			// execute the query and get the instructor
+			// this query load instructor and courses all at once
+			Instructor instructor = query.getSingleResult();
+
+			System.out.println("\nInstructor :" + instructor);
+
+			session.close();
+
+			System.out.println("\nCourses are " + instructor.getCourse() + "\n");
+		}
+
+		finally {
+			// add clean up code for leaking
+			session.close();
+			factory.close();
+		}
+	}
+}

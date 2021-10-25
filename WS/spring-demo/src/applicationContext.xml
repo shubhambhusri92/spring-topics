@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="http://www.springframework.org/schema/beans">
+
+	<!-- Load External Properties file -->
+	<context:property-placeholder
+		location="classpath:sport.properties" />
+
+	<!-- Define your beans here -->
+	<bean class="com.luv2code.practice.HappyFortuneService"
+		id="myHappyFortuneService" scope="singleton">
+	</bean>
+
+	<!-- injecting dependency using setter method -->
+	<bean class="com.luv2code.practice.BasketBallCoach"
+		id="myBasketBallCoach" scope="singleton"
+		init-method="doMyStartupStuff" destroy-method="doMyCleanUpStuff">
+		<property name="fortuneService" ref="myHappyFortuneService"></property>
+		<property name="name" value="${foo.name}"></property>
+		<property name="citizen" value="${foo.nationality}"></property>
+	</bean>
+
+	<!-- injecting dependency of FortuneService in Cricket Coach using Constructor -->
+	<bean class="com.luv2code.practice.CricketCoach"
+		id="myCricketCoach" scope="prototype" init-method="doMyStartupStuff"
+		destroy-method="doMyCleanUpStuff">
+		<constructor-arg ref="myHappyFortuneService">
+		</constructor-arg>
+		<!-- setting literal values using property name and value -->
+		<property name="team" value="RCB Bangalore"></property>
+		<property name="emailAddress"
+			value="Shubhambhusri@rcbbangalore.com"></property>
+	</bean>
+</beans>

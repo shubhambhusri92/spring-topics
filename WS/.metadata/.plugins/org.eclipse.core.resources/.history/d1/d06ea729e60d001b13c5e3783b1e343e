@@ -1,0 +1,16 @@
+package com.ericsson.smartmetering.service.dto;
+
+@SuppressWarnings({"S1068"})
+public class UsmsBalanceTransferSummaryDto {
+	
+	public UsmsBalanceTransferSummaryDto(Long id, String fromMeter, String toMeter, String totalAmount,
+			String monthYear) {
+		super();
+		this.id = id;
+		this.fromMeter = fromMeter;
+		this.toMeter = toMeter;
+		this.totalAmount = totalAmount;
+		this.monthYear = monthYear;
+	}
+
+}

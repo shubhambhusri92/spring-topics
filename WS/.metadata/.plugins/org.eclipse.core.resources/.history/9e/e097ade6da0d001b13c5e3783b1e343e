@@ -1,0 +1,257 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  </meta>
+  <title>Topup</title>
+
+  <style>
+	body {
+		font-size: 13px;
+		font-family: Roboto, "Helvetica Neue", sans-serif;
+  	}
+  	
+    .parent_width {
+      width: 90%;
+      margin: auto;
+	  box-sizing: border-box;
+    }
+
+    .margin_top_50 {
+      margin-top: 50px;
+    }
+
+    .width_100 {
+      width: 100%;
+	  box-sizing: border-box;
+    }
+
+    .dst_color {
+      padding: 0;
+      background-color: #33006f;
+      color: white;
+    }
+
+    .recipt_header {
+      position: relative;
+      border: 0.5px solid #000;
+      display: inline-block;
+    }
+
+    .recipt_header_content {
+      width: 70%;
+      float: left;
+    }
+
+    .recipt_header_text_bottom {
+      font-size: 14px;
+      margin: 0px 10px 5px;
+    }
+
+    .company_logo {
+      width: 30%;
+   	  display: inline-block;
+    }
+    
+    .company_logo > img {
+		width: 50%;
+	    float: right;
+	    margin-right: 10px;
+	    margin-top: 10px;
+	}
+
+    .recipt_header_text {
+      font-size: 22px;
+      font-weight: 500;
+      padding: 5px 8px;
+    }
+
+    table {
+      display: table;
+      border-collapse: unset;
+      border-spacing: 0px;
+      border-color: grey;
+    }
+
+    table tbody td {
+      border-left: 0.5px solid #000;
+      border-bottom: 0.5px solid #000;
+      padding: 5px 5px;
+      line-height: 10px;
+    }
+
+    /* 
+  table tbody tr td {
+    border-right: 0.5px solid #000;
+    
+  } */
+
+    table tbody tr td:last-child {
+      border-right: 0.5px solid #000;
+    }
+
+    .td_type {
+      background-color: #ebe8ec;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="parent_width">
+    <div class="width_100 dst_color recipt_header">
+      <div class="recipt_header_content">
+        <div class="recipt_header_text">DST METER TOP UP RECEIPT - <span th:text="${receiptNumber}"></span></div>
+        <div class="recipt_header_text_bottom">
+			<span th:text="${addressLine}"></span>, <br />
+        	<span th:text="${kampong}"></span>, <span th:text="${postalCode}"></span> <br />
+        	<span th:text="${phnNo}"></span> <span th:text="${emailId}"></span><br />
+		</div>
+      </div>
+      <div class="company_logo"><img alt="mastercard" th:src="@{'data:image/jpeg;base64,'+${image}}" /></div>
+    </div>
+    <table class="width_100">
+      <tr class="CUSTOMER_DETIALS dst_color">
+        <td colspan="2">CUSTOMER DETAILS</td>
+        <td colspan="2">METER DETAILS</td>
+      </tr>
+      <tr>
+        <td class="td_type">CUSTOMER NAME</td>
+        <td th:text="${userName}"></td>
+        <td class="td_type">METER TYPE</td>
+        <td th:text="${meterType}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">CUSTOMER MOBILE NUMBER</td>
+        <td th:text="${phoneNumber}"></td>
+        <td class="td_type">METER NO.</td>
+        <td th:text="${meterNumber}"></td>
+      </tr>
+      <tr th:if="${meterType == 'ELECTRICITY'}">
+        <td class="td_type">DATE</td>
+        <td th:text="${creationDate}"></td>
+        <td class="td_type"><span th:if="${customerType != 'NORMAL'}">KVA UNIT</span></td>
+        <td><span th:if="${customerType != 'NORMAL'}" th:text="${kvaUnit}"></span></td>
+      </tr>
+      <tr th:if="${meterType != 'ELECTRICITY'}">
+        <td class="td_type">DATE & Time</td>
+        <td colspan="3" th:text="${creationDate}"></td>
+      </tr>
+      <tr class="CUSTOMER_DETIALS dst_color">
+        <td colspan="2"> TOP UP INFORMATION</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td class="td_type">SERVICE PROVIDER NAME</td>
+        <td th:text="${serviceProvider}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">TOP UP AMOUNT</td>
+        <td>
+          <span>$</span>
+          <span th:text="${topupAmount}"></span>
+        </td>
+        <td th:if="${customerType == 'NORMAL'}" class="td_type">UNITS AFTER TOP UP
+          <span th:if="${meterType == 'ELECTRICITY'}">(kWh)</span>
+          <span th:if="${meterType != 'ELECTRICITY'}">(m<sup>3</sup>)</span>
+        </td>
+        <td th:if="${customerType == 'NORMAL'}" th:text="${unitsAfter}"></td>
+        <td th:if="${customerType != 'NORMAL'}" class="td_type">BALANCE AFTER TOP UP</td>
+        <td th:if="${customerType != 'NORMAL'}" >
+          <span>$</span>
+          <span th:text="${balanceAfter}"></span>
+        </td>
+      </tr>
+      <tr th:if="${customerType != 'NORMAL' && meterType == 'ELECTRICITY'}">
+      	<td class="td_type">LEGACY UNITS (kWh)</td>
+      	<td colspan="3" th:text="${unitsAfter}"></td>
+      </tr>
+      <tr th:if="${customerType == 'NORMAL'}">
+        <td class="td_type">BALANCE BEFORE TOP UP</td>
+        <td>
+          <span>$</span>
+          <span th:text="${balanceBefore}"></span>
+        </td>
+        <td class="td_type">DEBT AMOUNT BEFORE TOP UP</td>
+        <td>
+          <span>$</span>
+          <span th:text="${debtBefore}"></span>
+        </td>
+      </tr>
+      <tr th:if="${customerType == 'NORMAL'}">
+        <td class="td_type">BALANCE AFTER TOP UP</td>
+        <td>
+          <span>$</span>
+          <span th:text="${balanceAfter}"></span>
+        </td>
+        <td class="td_type">DEBT AMOUNT AFTER TOP UP</td>
+        <td>
+          <span>$</span>
+          <span th:text="${debtAfter}"></span>
+        </td>
+      </tr>
+      <tr>
+        <td class="td_type">ACTUAL TOP-UP</td>
+        <td>
+          <span>$</span>
+          <span th:text="${amountCredited}"></span>
+        </td>
+        <td class="td_type">UNITS CREDITED (kWh)</td>
+        <td th:text="${unitsCredited}" />
+      </tr>
+      <tr>
+        <td class="td_type">DEBT ADJUSTED</td>
+        <td>
+          <span>$</span>
+          <span th:text="${debtAdjusted}"></span>
+          <span th:if="${debtAdjusted == null}">0.00</span>
+        </td>
+        <td class="td_type">INITIAL LOAN CLEARED</td>
+        <td>
+          <span>$</span>
+          <span th:text="${initialLoanCleared}"></span>
+          <span th:if="${initialLoanCleared == null}">0.00</span>
+        </td>
+      </tr>
+      <tr class="CUSTOMER_DETIALS dst_color">
+        <td colspan="2">PAYMENT DETAILS</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td class="td_type">TRANSACTION DATE</td>
+        <td th:text="${creationDate}"></td>
+        <td class="td_type">CARD/CHEQUE NO</td>
+        <td>
+        	<span th:text="${modeNumber}"></span>
+        </td>
+      </tr>
+      <tr>
+        <td class="td_type">TRANSACTION AMOUNT</td>
+        <td>
+          <span>$</span>
+          <span th:text="${topupAmount}"></span>
+        </td>
+        <td class="td_type">BANK NAME</td>
+        <td th:text="${bankName}"></td>
+      </tr>
+      <tr>
+        <td class="td_type">PAYMENT MODE</td>
+        <td th:text="${paymentMode}"></td>
+        <td class="td_type">POS TRANSACTION NO</td>
+        <td th:text="${txnNumber}"></td>
+      </tr>
+      <tr class="COLLECTION AGENT DETAILS dst_color">
+        <td colspan="2">COLLECTION AGENT DETAILS</td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td class="td_type">COUNTER CODE</td>
+        <td th:text="${counterCode}"></td>
+        <td class="td_type">AGENT CODE</td>
+        <td th:text="${agentCode}"></td>
+      </tr>
+    </table>
+  </div>
+</body>
+
+</html>

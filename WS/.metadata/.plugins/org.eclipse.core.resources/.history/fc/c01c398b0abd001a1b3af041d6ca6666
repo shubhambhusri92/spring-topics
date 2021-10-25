@@ -1,0 +1,20 @@
+
+enum Data
+{
+	ACTIVE,INACTIVE;
+}
+public class Test {
+
+	public static void main(String[] args) {
+		
+		String name = "Active";
+		
+		if(Data.ACTIVE.name().equals(name))
+		{
+			System.out.println("Pass");
+		}
+		
+		System.out.println(Data.ACTIVE.name());
+		System.out.println(Data.ACTIVE.toString());
+	}
+}

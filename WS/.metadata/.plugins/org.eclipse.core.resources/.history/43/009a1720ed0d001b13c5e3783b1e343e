@@ -1,0 +1,130 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Debt Transaction Summary</title>
+<style>
+body {
+	font-size: 10px;
+	font-family: Roboto, "Helvetica Neue", sans-serif;
+	margin: 0;
+	padding: 0;
+}
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+table>thead>tr.header_row {
+	height: 50px;
+	background: #33006f;
+	color: white;
+}
+
+tr.meter-number-row>th {
+	padding: 15px 0px;
+}
+
+tr>.receiptId, tr>.finalDebt, tr>.initialDebt, tr>.debtAdjusted, tfoot>tr>th
+	{
+	text-align: left;
+}
+
+tfoot>tr {
+	border-top: 2px solid;
+}
+
+.receiptId {
+	width: 90px;
+}
+
+.finalDebt {
+	width: 80px;
+}
+
+.source, .createdBy {
+	width: 90px;
+}
+
+.initialDebt, .debtAdjusted, .transactionType {
+	width: 130px;
+}
+
+.paymentDate {
+	text-align: center;
+	width: 150px;
+}
+
+.site, .source, .createdBy, .transactionType {
+	padding-left: 5px;
+}
+
+.company_logo {
+	width: 100px;
+}
+
+.logo_cell {
+	text-align: right;
+}
+
+.pdf_title {
+	text-align: left;
+	font-size: 22px;
+	font-family: Arial, sans-serif;
+	padding: 0 5px;
+}
+</style>
+</head>
+<body>
+	<div>
+		<table>
+			<thead>
+				<tr class="header_row">
+					<th class="pdf_title" colspan="4">DEBT TRANSACTION SUMMARY</th>
+					<th class="logo_cell" colspan="3"><img class="company_logo"
+						alt="company_logo" th:src="@{'data:image/jpeg;base64,'+${image}}" /></th>
+				</tr>
+				<tr class="meter-number-row">
+					<th colspan="1">METER NUMBER:</th>
+					<th colspan="6" th:text="${meterNumber}"></th>
+				</tr>
+				<tr>
+					<th class="paymentDate">TRANSACTION DATE</th>
+					<th class="receiptId">TRANSACTION ID</th>
+					<th class="createdBy">CREATED BY</th>
+					<th class="transactionType">TRANSACTION TYPE</th>
+					<th class="initialDebt">INITIAL DEBT($)</th>
+					<th class="debtAdjusted">AMOUNT PAID($)</th>
+					<th class="finalDebt">FINAL DEBT($)</th>
+
+				</tr>
+			</thead>
+			<tbody>
+				<tr th:each="debtTransaction, iter : ${debtTransactionHistory}">
+					<td class="paymentDate"
+						th:text="${debtTransaction.transactionDate}" />
+					<td class="receiptId" th:text="${debtTransaction.transactionId}" />
+					<td class="createdBy" th:text="${debtTransaction.agentName}" />
+					<td class="transactionType"
+						th:text="${debtTransaction.transactionType}" />
+					<td class="finalDebt" th:text="${debtTransaction.previousDebt}" />
+					<td class="initialDebt" th:text="${debtTransaction.amount}" />
+					<td class="debtAdjusted" th:text="${debtTransaction.openDebt}" />
+				</tr>
+			</tbody>
+			<tfoot>
+				<tr>
+					<th style="text-align: right" colspan="4">TOTAL -</th>
+					<th
+						th:text="${#numbers.formatDecimal(#aggregates.sum(debtTransactionHistory.![previousDebt]), 2, 2, 'POINT')}"></th>
+					<th
+						th:text="${#numbers.formatDecimal(#aggregates.sum(debtTransactionHistory.![amount]), 2, 2, 'POINT')}"></th>
+					<th
+						th:text="${#numbers.formatDecimal(#aggregates.sum(debtTransactionHistory.![openDebt]), 2, 2, 'POINT')}"></th>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+</body>
+</html>

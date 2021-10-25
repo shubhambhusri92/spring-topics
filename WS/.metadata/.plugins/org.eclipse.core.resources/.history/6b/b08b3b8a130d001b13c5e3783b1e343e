@@ -1,0 +1,103 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Legacy Adjustment History</title>
+    <style>
+            body {
+                font-size: 10px;
+                font-family: Roboto, "Helvetica Neue", sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            table > thead > tr.header_row {
+                height: 50px;
+                background: #33006f;
+                color: white;
+            }
+            tr.meter-number-row > th {
+                padding: 15px 0px;
+            }
+            .text-right {
+                text-align: right;
+            }
+            tfoot > tr {
+                border-top: 2px solid;
+            }
+            .text-center {
+                text-align: center;
+            }
+            .padding-left-5 {
+                padding-left: 5px;
+            }
+            .company_logo {
+                width: 100px;
+            }
+            .logo_cell {
+                text-align: right;
+            }
+            .pdf_title {
+                text-align: left;
+                font-size: 22px;
+                font-family: Arial, sans-serif;
+                padding: 0 5px;
+            }
+            .w110 {
+                width: 110px;
+            }
+            .w130 {
+                width: 130px;
+            }
+            .w90 {
+                width: 90px;
+            }
+    </style>
+</head>
+<body>
+<div>
+    <table>
+        <thead>
+        <tr class="header_row">
+            <th class="pdf_title" colspan="4">LEGACY ADJUSTMENT SUMMARY</th>
+            <th class="logo_cell" colspan="3"><img class="company_logo" alt="company_logo" th:src="@{'data:image/jpeg;base64,'+${image}}"/></th>
+        </tr>
+        <tr class="meter-number-row">
+            <th colspan="1">METER NUMBER:</th>
+            <th colspan="6" th:text="${meterNumber}"></th>
+        </tr>
+        <tr>
+            <th class="text-center w110">TRANSACTION DATE</th>
+            <th class="text-right w90">TRANSACTION ID</th>
+            <th class="padding-left-5 w90">ADJUSTMENT TYPE</th>
+            <th class="padding-left-5 w90">ADJUSTED BY</th>
+            <th class="padding-left-5 w130">REASON</th>
+            <th class="text-right">ADJUSTED UNITS(kWh)</th>
+            <th class="text-right">PREVIOUS OLD METER BALANCE(kWh)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="adj, iter : ${adjustmentHistory}">
+            <td class="text-center w110" th:text="${adj.getTransactionDate()}"/>
+            <td class="text-right w110" th:text="${adj.getTransactionId()}"/>
+            <td class="padding-left-5 w90" th:text="${adj.getTransactionType()}"/>
+            <td class="padding-left-5 w90" th:text="${adj.getAgentId()}"/>
+            <td class="padding-left-5" th:text="${adj.getReasonCode()}"/>
+            <td class="text-right" th:text="${#numbers.formatDecimal(adj.getBucketValues().getLegacyUnits(), 2, 3, 'POINT')}"/>
+            <td class="text-right" th:text="${#numbers.formatDecimal(adj.getBucketValues().getPrevLegacyUnits(), 2, 3, 'POINT')}"/>
+        </tr>
+        </tbody>
+        <tfoot>
+        <tr>
+            <th class="text-right" colspan="5">TOTAL</th>
+            <th class="text-right" th:text="${#numbers.formatDecimal(#aggregates.sum(adjustmentHistory.![getBucketValues().getLegacyUnits()]), 2, 3, 'POINT')}"></th>
+            <th></th>
+        </tr>
+        </tfoot>
+    </table>
+</div>
+</body>
+</html>

@@ -1,0 +1,98 @@
+package com.ericsson.smartmetering.repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import com.ericsson.smartmetering.domain.UsmsCustomer;
+import com.ericsson.smartmetering.domain.UsmsMeter;
+import com.ericsson.smartmetering.domain.enumeration.MeterStatus;
+import com.ericsson.smartmetering.domain.enumeration.MeterType;
+
+/**
+ * Spring Data repository for the UsmsMeter entity.
+ */
+//@Repository
+public interface UsmsMeterRepository extends JpaRepository<UsmsMeter, Long>, JpaSpecificationExecutor<UsmsMeter> {
+
+	@Override
+	@EntityGraph(attributePaths = "usmsContracts")
+	Optional<UsmsMeter> findById(Long aLong);
+
+	@EntityGraph(attributePaths = "usmsContracts")
+	Optional<UsmsMeter> findByIdAndCreatedDateBetween(Long aLong, LocalDateTime startDate, LocalDateTime endDate);
+
+	/**
+	 * Select UsmsMeter, UsmsContract and UsmsContractDebt eagerly by UsmsMeter's Id
+	 * (PK)
+	 * 
+	 * @param id of UsmsMeter
+	 * @return meter entity
+	 */
+//	@Query("select meter from UsmsMeter meter inner join fetch meter.usmsContracts cont left join fetch cont.usmsContractDebts debt where meter.id = :meterId and cont.isDeleted = false order by debt.id")
+	@Query("select meter from UsmsMeter meter inner join fetch meter.usmsContracts cont where meter.id = :meterId and cont.isDeleted = false")
+	Optional<UsmsMeter> findByUsmsMeterIdAndActiveContract(@Param("meterId") Long id);
+
+	/**
+	 * Select UsmsMeter, UsmsContract and UsmsContractDebt eagerly by UsmsContract's
+	 * workorderId
+	 * 
+	 * @param workorderId of UsmsContract
+	 * @return meter entity
+	 */
+	@Query("select meter from UsmsMeter meter inner join fetch meter.usmsContracts cont left join fetch "
+			+ "cont.usmsContractDebts debt where cont.workOrderId = :workorderId and cont.isDeleted = false "
+			+ "order by debt.id")
+	Optional<UsmsMeter> findByUsmsContractsWorkOrderIdAndActiveContract(@Param("workorderId") String workorderId);
+
+	List<UsmsMeter> findByMeterNumber(String meterNumber);
+
+	Optional<UsmsMeter> findOneByMeteringPointAndStatusIn(String meteringPoint, MeterStatus... statuses);
+
+	Optional<UsmsMeter> findByUsmsCustomerAndMeterTypeAndStatusIn(UsmsCustomer customer, MeterType meterType,
+			MeterStatus... status);
+
+//	@Query("select meter from UsmsMeter meter where meter.status = :status and meter.usmsContracts.id = :contractId")
+//	Optional<UsmsMeter> getMeterByContractIdAndStatusActive(@Param("status") MeterStatus status,
+//			@Param("contractId") Long contractId);
+
+	Optional<UsmsMeter> getMeterByStatusAndUsmsContractsId(MeterStatus status, Long contractId);
+
+//	@Query("select meter from UsmsMeter meter where meter.status not in (:status) and meter.meterNumber = :meterNumber")
+	List<UsmsMeter> findByMeterNumberAndStatusNotIn(String meterNumber, MeterStatus... statuses);
+
+	@EntityGraph(attributePaths = { "usmsCustomer", "usmsContracts", "usmsContracts.usmsContractDebts" })
+	List<UsmsMeter> findOneByMsisdn(Long msisdn);
+
+	UsmsMeter findTopByMeterNumberOrderByIdDesc(String meterNumber);
+
+	Optional<UsmsMeter> findTopByUsmsCustomerAndMeterTypeOrderByIdDesc(UsmsCustomer customer, MeterType meterType);
+
+	@EntityGraph(attributePaths = { "usmsCustomer", "usmsContracts", "usmsContracts.usmsContractDebts" })
+	Optional<UsmsMeter> findOneByMsisdnAndStatus(long parseLong, MeterStatus status);
+
+	@Query("select distinct m.id, m.meterNumber from UsmsMeter m inner join m.usmsServiceProvider p inner join "
+			+ "m.usmsContracts cont inner join cont.usmsPackage pc where p.serviceType = :serviceProvider and  "
+			+ "pc.customerType = :customerType and m.meterNumber LIKE :meterNo% and m.status in ('ACTIVE', 'SUSPEND')")
+	List<Object[]> findByUsmsMeterNumberAndServiceProviderAndCustomerType(String serviceProvider, String customerType,
+			String meterNo);
+
+	@Query("select m.meterNumber from UsmsMeter m where m.status = :status and m.meterType = :type")
+	List<String> getMeterNumberByStatusAndMeterType(@Param("status") MeterStatus status, @Param("type") MeterType type);
+
+	@Query("select m.msisdn from UsmsMeter m where m.id = :id")
+	Long findMsisdnByMeterId(Long id);
+
+	@Query(nativeQuery = true, value = "WITH RECURSIVE subordinates AS (SELECT * FROM usms_meter WHERE "
+			+ "meter_number = :meterNumber and created_date between :startDateTime and :endDateTime UNION SELECT m.* FROM usms_meter m INNER JOIN subordinates s ON "
+			+ "s.prev_meter_id = m.meter_number) SELECT * FROM subordinates order by id desc")
+	List<UsmsMeter> findRecursiveByMeterNumber(@Param("meterNumber") String meterNumber,
+			@Param("startDateTime") LocalDateTime startDateTime, @Param("endDateTime") LocalDateTime endDateTime);
+
+}

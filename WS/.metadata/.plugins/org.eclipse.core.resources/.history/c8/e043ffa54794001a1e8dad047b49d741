@@ -1,0 +1,133 @@
+package com.ericsson.smartmetering.request.impl;
+
+import java.time.Instant;
+import java.time.LocalDateTime;
+
+import com.ericsson.smartmetering.domain.Address;
+
+public class CuculusRequestImpl extends SmartMeterRequestImpl {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 2067266613928946951L;
+	
+	private String meterNumber;
+	
+	private String latitude;
+	
+	private String longitude;
+	
+	private String meteringPoint;
+	
+	private LocalDateTime meterCreatedDate;
+
+	private LocalDateTime meterUpdatedDate;
+	
+	private Address address;
+
+	private String meterCapacity;
+
+	private String vendor;
+
+	public CuculusRequestImpl() {
+	}
+
+	public String getMeterNumber() {
+		return meterNumber;
+	}
+
+	public CuculusRequestImpl setMeterNumber(String meterNumber) {
+		this.meterNumber = meterNumber;
+		return this;
+	}
+
+	public String getLatitude() {
+		return latitude;
+	}
+
+	public CuculusRequestImpl setLatitude(String latitude) {
+		this.latitude = latitude;
+		return this;
+	}
+
+	public String getLongitude() {
+		return longitude;
+	}
+
+	public CuculusRequestImpl setLongitude(String longitude) {
+		this.longitude = longitude;
+		return this;
+	}
+
+	public String getMeteringPoint() {
+		return meteringPoint;
+	}
+
+	public CuculusRequestImpl setMeteringPoint(String meteringPoint) {
+		this.meteringPoint = meteringPoint;
+		return this;
+	}
+
+	public LocalDateTime getMeterCreatedDate() {
+		return meterCreatedDate;
+	}
+
+	public CuculusRequestImpl setMeterCreatedDate(LocalDateTime meterCreatedDate) {
+		this.meterCreatedDate = meterCreatedDate;
+		return this;
+	}
+
+	public LocalDateTime getMeterUpdatedDate() {
+		return meterUpdatedDate;
+	}
+
+	public CuculusRequestImpl setMeterUpdatedDate(LocalDateTime meterUpdatedDate) {
+		this.meterUpdatedDate = meterUpdatedDate;
+		return this;
+	}
+
+	public Address getAddress() {
+		return address;
+	}
+
+	public CuculusRequestImpl setAddress(Address address) {
+		this.address = address;
+		return this;
+	}
+
+	public String getMeterCapacity() {
+		return meterCapacity;
+	}
+
+	public CuculusRequestImpl setMeterCapacity(String meterCapacity) {
+		this.meterCapacity = meterCapacity;
+		return this;
+	}
+
+	public String getVendor() {
+		return vendor;
+	}
+
+	public CuculusRequestImpl setVendor(String vendor) {
+		this.vendor = vendor;
+		return this;
+	}
+
+	@Override
+	public String toString() {
+		return "CuculusRequestImpl{" +
+				"meterNumber='" + meterNumber + '\'' +
+				", latitude='" + latitude + '\'' +
+				", longitude='" + longitude + '\'' +
+				", meteringPoint='" + meteringPoint + '\'' +
+				", meterCreatedDate=" + meterCreatedDate +
+				", meterUpdatedDate=" + meterUpdatedDate +
+				", address=" + address +
+				", meterCapacity='" + meterCapacity + '\'' +
+				", vendor='" + vendor + '\'' +
+				", auxiliaryRequestParameters=" + auxiliaryRequestParameters +
+				'}';
+	}
+
+}

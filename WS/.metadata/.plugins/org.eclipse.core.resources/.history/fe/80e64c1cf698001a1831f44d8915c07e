@@ -1,0 +1,806 @@
+package com.ericsson.smartmetering.service.impl;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.ZonedDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+
+import com.ericsson.smartmetering.model.CustomerOverviewModel;
+import com.ericsson.smartmetering.service.*;
+import com.ericsson.smartmetering.service.dto.AccountDetailsDTO;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.MessageSource;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+
+import com.ericsson.smartmetering.cache.CacheProvider;
+import com.ericsson.smartmetering.commands.Command;
+import com.ericsson.smartmetering.commands.CommandResponse;
+import com.ericsson.smartmetering.commands.executor.CommandExecutorService;
+import com.ericsson.smartmetering.config.USMSConstants;
+import com.ericsson.smartmetering.config.ValueConstant;
+import com.ericsson.smartmetering.domain.UsmsContract;
+import com.ericsson.smartmetering.domain.UsmsContractDebt;
+import com.ericsson.smartmetering.domain.UsmsCustomer;
+import com.ericsson.smartmetering.domain.UsmsDaTierMapping;
+import com.ericsson.smartmetering.domain.UsmsKampong;
+import com.ericsson.smartmetering.domain.UsmsMeter;
+import com.ericsson.smartmetering.domain.UsmsPackageCode;
+import com.ericsson.smartmetering.domain.UsmsPaymentResponsible;
+import com.ericsson.smartmetering.domain.enumeration.AIRResponseCode;
+import com.ericsson.smartmetering.domain.enumeration.AuxRequestParam;
+import com.ericsson.smartmetering.domain.enumeration.BucketType;
+import com.ericsson.smartmetering.domain.enumeration.CommandMainTask;
+import com.ericsson.smartmetering.domain.enumeration.CommandSubTask;
+import com.ericsson.smartmetering.domain.enumeration.ContractStatus;
+import com.ericsson.smartmetering.domain.enumeration.ErrorMessage;
+import com.ericsson.smartmetering.domain.enumeration.LanguageEnum;
+import com.ericsson.smartmetering.domain.enumeration.MainTaskUseCase;
+import com.ericsson.smartmetering.domain.enumeration.MeterStatus;
+import com.ericsson.smartmetering.domain.enumeration.MeterType;
+import com.ericsson.smartmetering.domain.enumeration.PaymentResponsibleType;
+import com.ericsson.smartmetering.model.PaymentResponsibleHistoryModel;
+import com.ericsson.smartmetering.model.PaymentResponsibleModel;
+import com.ericsson.smartmetering.repository.UsmsContractDebtRepository;
+import com.ericsson.smartmetering.repository.UsmsContractRepository;
+import com.ericsson.smartmetering.repository.UsmsCustomerRepository;
+import com.ericsson.smartmetering.repository.UsmsMeterRepository;
+import com.ericsson.smartmetering.repository.UsmsPaymentResponsibleRepository;
+import com.ericsson.smartmetering.request.SmartMeterRequest;
+import com.ericsson.smartmetering.request.impl.CuculusRequestImpl;
+import com.ericsson.smartmetering.request.impl.SmartMeterRequestImpl;
+import com.ericsson.smartmetering.service.dto.UsmsBucketContractMappingDTO;
+import com.ericsson.smartmetering.service.dto.UsmsBucketDetailsDTO;
+import com.ericsson.smartmetering.service.dto.UsmsPaymentResponsibleDTO;
+import com.ericsson.smartmetering.service.mapper.PaymentResponsibleModelMapper;
+import com.ericsson.smartmetering.service.mapper.UsmsMeterMapper;
+import com.ericsson.smartmetering.service.mapper.UsmsPaymentResponsibleMapper;
+import com.ericsson.smartmetering.service.util.CacheUtil;
+import com.ericsson.smartmetering.service.util.CommandUtil;
+import com.ericsson.smartmetering.service.util.InstantUtil;
+import com.ericsson.smartmetering.service.util.MessageSourceUtil;
+import com.ericsson.smartmetering.service.util.ObjectMapperUtils;
+import com.ericsson.smartmetering.service.util.RequestUtil;
+import com.ericsson.smartmetering.service.util.USMSFileUtil;
+import com.ericsson.smartmetering.web.rest.errors.SmartMeteringException;
+
+/**
+ * Service Implementation for managing UsmsPaymentResponsible.
+ */
+@Service
+@Transactional
+public class UsmsPaymentResponsibleServiceImpl implements UsmsPaymentResponsibleService {
+
+	private final Logger LOGGER = LoggerFactory.getLogger(UsmsPaymentResponsibleServiceImpl.class);
+
+	@Value("${dst.paymentResponsible.id}")
+	private Long dstPaymentResponsibleId;
+
+	@Value("${meter.image.path}")
+	private String imageFilePath;
+
+	@Autowired
+	private UsmsPaymentResponsibleRepository usmsPaymentResponsibleRepository;
+
+	private final UsmsPaymentResponsibleMapper usmsPaymentResponsibleMapper;
+
+	private final PaymentResponsibleModelMapper paymentResponsibleModelMapper;
+
+	@Autowired
+	private UsmsPaymentService paymentService;
+
+	@Autowired
+	private UsmsCustomerServiceImpl customerService;
+
+	@Autowired
+	private UsmsContractRepository usmsContractRepository;
+
+	@Autowired
+	private UsmsMeterRepository usmsMeterRepository;
+
+	@Autowired
+	private UsmsCustomerRepository usmsCustomerRepository;
+
+	@Autowired
+	private UsmsContractDebtRepository contractDebtRepository;
+
+	/** The message source. */
+	private final MessageSourceUtil messageSourceUtil;
+
+	private final NotificationService notificationService;
+
+	private final CommandExecutorService commandExecutorService;
+
+	/** The entity manager. */
+	@PersistenceContext
+	private EntityManager entityManager;
+
+	private final UsmsBucketDetailsService usmsBucketDetailsService;
+	private final UsmsBucketContractMappingService usmsBucketContractMappingService;
+	private final InstantUtil instantUtil;
+
+	public UsmsPaymentResponsibleServiceImpl(UsmsPaymentResponsibleMapper usmsPaymentResponsibleMapper,
+			PaymentResponsibleModelMapper paymentResponsibleModelMapper, MessageSource messageSource,
+			NotificationService notificationService, CommandExecutorService commandExecutorService,
+			UsmsBucketDetailsService usmsBucketDetailsService, MessageSourceUtil messageSourceUtil,
+			UsmsBucketContractMappingService usmsBucketContractMappingService, InstantUtil instantUtil) {
+		this.usmsPaymentResponsibleMapper = usmsPaymentResponsibleMapper;
+		this.paymentResponsibleModelMapper = paymentResponsibleModelMapper;
+		this.messageSourceUtil = messageSourceUtil;
+		this.notificationService = notificationService;
+		this.commandExecutorService = commandExecutorService;
+		this.usmsBucketDetailsService = usmsBucketDetailsService;
+		this.usmsBucketContractMappingService = usmsBucketContractMappingService;
+		this.instantUtil = instantUtil;
+	}
+
+	/**
+	 * Save a usmsPaymentResponsible.
+	 *
+	 * @param usmsPaymentResponsibleDTO the entity to save
+	 * @return the persisted entity
+	 */
+	@Override
+	public UsmsPaymentResponsibleDTO save(UsmsPaymentResponsibleDTO usmsPaymentResponsibleDTO) {
+		LOGGER.debug("Request to save UsmsPaymentResponsible : {}", usmsPaymentResponsibleDTO);
+
+		UsmsPaymentResponsible usmsPaymentResponsible = usmsPaymentResponsibleMapper
+				.toEntity(usmsPaymentResponsibleDTO);
+		usmsPaymentResponsible = usmsPaymentResponsibleRepository.save(usmsPaymentResponsible);
+		return usmsPaymentResponsibleMapper.toDto(usmsPaymentResponsible);
+	}
+
+	@Override
+	@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+	public UsmsPaymentResponsibleDTO changePaymentResponsible(PaymentResponsibleModel paymentResponsibleModel,
+			PaymentResponsibleType type, Boolean deleted) throws SmartMeteringException, NoSuchFieldException {
+
+		LOGGER.info("Request to change UsmsPaymentResponsible : {}", paymentResponsibleModel);
+		UsmsPaymentResponsibleDTO dto = saveNewPaymentResponsible(paymentResponsibleModel, type, deleted);
+
+		saveDocumentsAndSendNotification(paymentResponsibleModel, dto, "payment.responsible.change");
+
+		return dto;
+
+	}
+
+	@Override
+	@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+	public UsmsPaymentResponsibleDTO updatePaymentResponsible(PaymentResponsibleModel paymentResponsibleModel)
+			throws SmartMeteringException, NoSuchFieldException {
+
+		LOGGER.info("Request to Update UsmsPaymentResponsible : {}", paymentResponsibleModel);
+		Optional<UsmsPaymentResponsible> paymentResponsibleOpt = usmsPaymentResponsibleRepository
+				.findById(paymentResponsibleModel.getId());
+		UsmsPaymentResponsibleDTO dto = null;
+
+		if (paymentResponsibleOpt.isPresent()) {
+			UsmsPaymentResponsible paymentResponsible = paymentResponsibleOpt.get();
+			paymentResponsible.setAddress(paymentResponsibleModel.getAddress());
+			paymentResponsible.setAltContactNumber(paymentResponsibleModel.getAltContactNumber());
+			paymentResponsible.setContactNumber(paymentResponsibleModel.getContactNumber());
+			paymentResponsible.setIcNumber(paymentResponsibleModel.getIcNumber());
+			UsmsKampong kampong = new UsmsKampong();
+			kampong.setId(paymentResponsibleModel.getKampongId());
+			paymentResponsible.setUsmsKampong(kampong);
+			paymentResponsible.setSmsNo(paymentResponsibleModel.getSmsNo());
+			paymentResponsible.setEmail(paymentResponsibleModel.getEmail());
+			paymentResponsible.setName(paymentResponsibleModel.getName());
+			dto = usmsPaymentResponsibleMapper.toDto(paymentResponsible);
+			entityManager.merge(paymentResponsible);
+		}
+
+		saveDocumentsAndSendNotification(paymentResponsibleModel, dto, "payment.responsible.update");
+
+		return dto;
+
+	}
+
+	@Override
+	public Map<String, Object> getDebtAndMADetail(Long meterId) throws SmartMeteringException {
+		Optional<UsmsMeter> meterOptional = usmsMeterRepository.findById(meterId);
+		if (!meterOptional.isPresent())
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, "meter");
+		AccountDetailsDTO accountDetails = paymentService.getAccountDetailFromMeter(meterOptional);
+		CustomerOverviewModel customer = customerService
+				.getCustomerOverview(Optional.of(meterOptional.get().getUsmsCustomer().getCustParent()));
+		Map<String, Object> map = new HashMap<>(2);
+		map.put("accountDetails", accountDetails);
+		map.put("maDetails", customer);
+		return map;
+	}
+
+	/**
+	 * @param paymentResponsibleModel
+	 * @param type
+	 * @param deleted
+	 * @return
+	 * @throws SmartMeteringException
+	 */
+	private UsmsPaymentResponsibleDTO saveNewPaymentResponsible(PaymentResponsibleModel paymentResponsibleModel,
+			PaymentResponsibleType type, Boolean deleted) throws SmartMeteringException {
+
+		UsmsPaymentResponsibleDTO dto = null;
+		Optional<UsmsContract> usmsContract = usmsContractRepository.findByStatusAndUsmsMeter_Id(
+				ContractStatus.INTRANSFER, Long.valueOf(paymentResponsibleModel.getMeterId()));
+		if (!usmsContract.isPresent() && usmsContract.get().isIsDeleted() != deleted) {
+			throw new SmartMeteringException(ErrorMessage.NOT_FOUND, new Object[] {
+					"in transfer contracts not present for meter:: " + paymentResponsibleModel.getMeterId() });
+		}
+		// create new payment responsible entry
+
+		UsmsContract newContract = getContractOfNewPaymentResponsible(paymentResponsibleModel, type, usmsContract);
+
+		if (type != PaymentResponsibleType.SERVICE_PROVIDER) {
+
+			UsmsMeter meter = usmsContract.get().getUsmsMeter();
+			if (meter.getStatus() == MeterStatus.INTRANSFER) {
+
+				String serviceProvider = meter.getUsmsServiceProvider().getServiceProviderName();
+
+				boolean isExecutedSuccessfully = callToAirToChangePmtResp(meter,
+						usmsContract.get().getUsmsPackage().getId(), usmsContract);
+
+				if (isExecutedSuccessfully) {
+
+					saveNewPaymentResponsibleInDatabase(usmsContract, newContract, serviceProvider);
+
+					dto = usmsPaymentResponsibleMapper.toDto(newContract.getPaymentResponsible());
+					UsmsMeter meterDetail = usmsContract.get().getUsmsMeter();
+
+					if (meterDetail.getStatus() == MeterStatus.INTRANSFER
+							|| meterDetail.getStatus() == MeterStatus.ACTIVE) {
+						dto.setMeterNumer(meterDetail.getMeterNumber());
+						dto.setMeterType(meterDetail.getMeterType());
+					}
+				}
+			}
+		}
+		return dto;
+	}
+
+	/**
+	 * @param paymentResponsibleModel
+	 * @param type
+	 * @param usmsContract
+	 * @return
+	 */
+	private UsmsContract getContractOfNewPaymentResponsible(PaymentResponsibleModel paymentResponsibleModel,
+			PaymentResponsibleType type, Optional<UsmsContract> usmsContract) {
+		UsmsPaymentResponsible newPaymentResponsible = paymentResponsibleModelMapper.toEntity(paymentResponsibleModel);
+		newPaymentResponsible.usmsCustomer(usmsCustomerRepository.getOne(usmsContract.get().getUsmsCustomer().getId()))
+				.seq(usmsContract.get().getPaymentResponsible().getSeq() + 1).activationDate(instantUtil.now())
+				.setPaymentResponsibleType(type);
+
+		// create new contract
+		UsmsContract newContract = new UsmsContract(usmsContract.get());
+		newContract.paymentResponsible(newPaymentResponsible).status(ContractStatus.ACTIVE);
+		return newContract;
+	}
+
+	/**
+	 * @param usmsContract
+	 * @param newPaymentResponsible
+	 * @param newContract
+	 * @param serviceProvider
+	 * @throws SmartMeteringException
+	 */
+	private void saveNewPaymentResponsibleInDatabase(Optional<UsmsContract> usmsContract, UsmsContract newContract,
+			String serviceProvider) throws SmartMeteringException {
+
+		UsmsMeter meter = usmsContract.get().getUsmsMeter();
+		UsmsMeter usmsMeter = usmsMeterRepository.getOne(meter.getId());
+		newContract.setUsmsMeter(usmsMeterRepository.getOne(meter.getId()));
+		usmsMeterRepository.changeMeterStatus(usmsMeter.getId(), MeterStatus.ACTIVE, MeterStatus.INTRANSFER);
+
+		try {
+			usmsContractRepository.changeContractStatus(usmsContract.get().getId(), ContractStatus.INACTIVE,
+					ContractStatus.INTRANSFER);
+			usmsContractRepository.save(newContract);
+			newContract.setContractNumber(String.format(USMSConstants.CONTRACT_CODE_FORMAT, serviceProvider,
+					ZonedDateTime.now().getYear(), newContract.getId()));
+			usmsPaymentResponsibleRepository.save(newContract.getPaymentResponsible());
+		} catch (Exception e) {
+			LOGGER.error("unable to insert either new contract or new paymentResponsible:: {}", e.getMessage());
+			throw new SmartMeteringException(ErrorMessage.UPDATE_FAILED,
+					new Object[] { "Unable to insert contract or new paymentResponsible" });
+		}
+	}
+
+	/***
+	 * 
+	 * @param bucket
+	 * @param currTierType
+	 * @param value
+	 */
+	public void setBuckectValue(UsmsBucketDetailsDTO bucket, String currTierType, String value) {
+
+		Optional<BucketType> bucketOpt = BucketType.getEnumFromName(currTierType);
+
+		if (USMSConstants.LEGACY_BUCKET_NAME.equalsIgnoreCase(currTierType)) {
+			bucket.setCurrLegacyUnitBucket((Float.parseFloat(value) / 100));
+		} else {
+			if (bucketOpt.isPresent()) {
+				switch (bucketOpt.get()) {
+				case TIER1:
+					bucket.setCurrTier1Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER2:
+					bucket.setCurrTier2Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER3:
+					bucket.setCurrTier3Bucket((Float.parseFloat(value) / 100));
+					break;
+				case TIER4:
+					bucket.setCurrTier4Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF1:
+					bucket.setCurrCf1Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF2:
+					bucket.setCurrCf2Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF3:
+					bucket.setCurrCf3Bucket((Float.parseFloat(value) / 100));
+					break;
+				case CF4:
+					bucket.setCurrCf4Bucket((Float.parseFloat(value) / 100));
+					break;
+				}
+			}
+		}
+
+		// return bucket;
+	}
+
+	// check this operation to save UsmsBucketDetailsDTO from
+	// UsmsBucketContractMapping
+	@SuppressWarnings("unused")
+	private void saveBucketDetails(UsmsBucketDetailsDTO usmsBucketDetailsDTO, UsmsContract contract)
+			throws SmartMeteringException {
+		UsmsBucketDetailsDTO buckectDetailsDto = usmsBucketDetailsService.save(usmsBucketDetailsDTO);
+
+		UsmsBucketContractMappingDTO bucketContractMapping = new UsmsBucketContractMappingDTO();
+		bucketContractMapping.setContractId(contract.getId());
+		// bucketContractMapping.setUsmsBucketDetails(buckectDetailsDto);
+		bucketContractMapping.setOperation(USMSConstants.DELETE_SUBSCRIBER_OPERATION);
+
+		bucketContractMapping.setUsmsBucketDetails(usmsBucketDetailsDTO);
+		usmsBucketContractMappingService.save(bucketContractMapping);
+	}
+
+	/***
+	 * This method is used to call AIR for the use case of payment responsible
+	 * Commands that will be called - Install Subscriber , UBAD and UA In case of
+	 * failure of any given commands delete Subscriber is to be called
+	 * 
+	 * @param usmsContract
+	 * 
+	 * @param meter        meter, UsmsCustomer usmsCustomer
+	 * @throws SmartMeteringException
+	 * @throws NoSuchFieldException
+	 */
+	private boolean callToAirToChangePmtResp(UsmsMeter meter, Long packageId, Optional<UsmsContract> usmsContract)
+			throws SmartMeteringException {
+
+		CuculusRequestImpl request = new CuculusRequestImpl();
+
+		if (StringUtils.hasText(meter.getMeterNumberPrefix()))
+			request.setMeterNumber(meter.getMeterNumber().substring(meter.getMeterNumberPrefix().length()));
+		else
+			request.setMeterNumber(meter.getMeterNumber());
+
+		request.setMeteringPoint(meter.getMeteringPoint());
+		request.setMeterCreatedDate(meter.getCreatedDate());
+		request.setMeterUpdatedDate(meter.getLastModifiedDate());
+		request.setLatitude(meter.getLatitude());
+		request.setLongitude(meter.getLongitude());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.ACTIVE);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_ID, meter.getId());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, meter.getMeterType());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, meter.getMsisdn());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.PACKAGE_ID, packageId);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.CUSTOMER_TYPE,
+				meter.getUsmsCustomer().getUsmsApplicantType().getApplicantTypeCode());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.ACTIVATION);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ACCUMULATOR_VALUE, meter.getKvaUnit());
+		request.putAuxiliaryRequestParameter(AuxRequestParam.ACCUMULATOR_ID, ValueConstant.ACCUMULATOR_ID);
+		request.putAuxiliaryRequestParameter(AuxRequestParam.TRANSACTION_CODE, meter.getMeterNumber());
+
+		commandExecutorService.execute(CommandMainTask.CHANGE_PAYMENT_RESPONSIBLE, request);
+
+		Command installSubs = request.getExecutedCommand(CommandSubTask.INSTALL_SUBSCRIBER);
+		if (!request.isRequestExecutedSuccessfully() && installSubs != null && installSubs.getCommandResponse()
+				.getCode().equals(((Integer) AIRResponseCode.RESPONSE_CODE_142.getCode()).toString())) {
+
+			request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.PAYMENT_RESPONSIBLE_CHANGE);
+			commandExecutorService.execute(CommandMainTask.DELETE_SUBSCRIBER, request);
+			handleDeleteSubscriber(request, usmsContract, meter.getMsisdn());
+			request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE, MainTaskUseCase.ACTIVATION);
+			commandExecutorService.execute(CommandMainTask.CHANGE_PAYMENT_RESPONSIBLE, request);
+		}
+
+		if (request.isRequestExecutedSuccessfully())
+			return request.isRequestExecutedSuccessfully();
+		throw new SmartMeteringException(ErrorMessage.CUCULUS_FAILURE_RESPONSE, USMSConstants.EMPTY);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void handleDeleteSubscriber(SmartMeterRequest request, Optional<UsmsContract> usmsContract, Long msisdn)
+			throws SmartMeteringException {
+		CommandSubTask deleteCommand = CommandSubTask.DELETE_SUBSCRIBER;
+		Command command = request.getExecutedCommand(deleteCommand);
+
+		CommandResponse deleteResponse = CommandUtil.getCommandSuccessResponse(command, deleteCommand.name(),
+				String.valueOf(msisdn));
+		LOGGER.debug("Delete Subscriber command Status {}", deleteResponse.getStatus());
+		if (deleteResponse.getResponse() != null) {
+			HashMap<Object, Object> response2 = (HashMap<Object, Object>) deleteResponse.getResponse();
+
+			// get tier list from cache as per package code
+			List<UsmsDaTierMapping> daTierMapping = CacheUtil
+					.getDaTierMappingList(usmsContract.get().getUsmsPackage().getId());
+
+			// make map of daid and bucket type
+			HashMap<Integer, String> tierDaIdMap = (HashMap<Integer, String>) RequestUtil.getTierDaIdMap(daTierMapping);
+
+			Object[] dedicatedAccountDeleteInfoArr = (Object[]) response2.get("dedicatedAccountDeleteInformation");
+
+			UsmsBucketDetailsDTO usmsBucketDetailsDTO = new UsmsBucketDetailsDTO();
+
+			for (Object dedicated : dedicatedAccountDeleteInfoArr) {
+				Map<Object, Object> dedicatedMap = (HashMap<Object, Object>) dedicated;
+				Integer daId = Integer.parseInt(String.valueOf(dedicatedMap.get("dedicatedAccountID")));
+				if (tierDaIdMap.containsKey(daId)) {
+					String daValue = (String) dedicatedMap.get("dedicatedAccountValue1");
+					setBuckectValue(usmsBucketDetailsDTO, tierDaIdMap.get(daId), daValue);
+				}
+
+			}
+
+			if (USMSConstants.CUSTOMER_TYPE_SPECIAL
+					.equalsIgnoreCase(usmsContract.get().getUsmsPackage().getCustomerType())) {
+				Float mainAccountBalance = RequestUtil
+						.fromAIR(Float.parseFloat(String.valueOf(response2.get("balanceCleared1")))).floatValue();
+				usmsBucketDetailsDTO.setMainAccountBalance(mainAccountBalance);
+			}
+
+			LOGGER.info("usmsBucketDetailsDTO:: {}", usmsBucketDetailsDTO);
+			saveBucketDetails(usmsBucketDetailsDTO, usmsContract.get());
+		}
+	}
+
+	/***
+	 * fetch contract on basis of meter
+	 * 
+	 * @param meter
+	 * @return
+	 */
+	private UsmsContractDebt fetchActiveContractForMeter(UsmsMeter meter) {
+		Long activeContractId = 0L;
+		;
+		for (UsmsContract usmsContract : meter.getUsmsContracts()) {
+			if (usmsContract.getStatus().equals(ContractStatus.ACTIVE)) {
+				activeContractId = usmsContract.getId();
+				break;
+			}
+		}
+
+		return contractDebtRepository.findByContractId(activeContractId);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	private List<UsmsContract> getDeletedContracts(Long customerId) {
+		return usmsContractRepository.findByUsmsCustomerIdAndIsDeletedOrderByIdDesc(customerId, true);
+	}
+
+	/**
+	 * Get all the usmsPaymentResponsibles.
+	 *
+	 * @return the list of entities
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<UsmsPaymentResponsibleDTO> findAll() {
+		LOGGER.debug("Request to get all UsmsPaymentResponsibles");
+		return usmsPaymentResponsibleRepository.findAll().stream().map(usmsPaymentResponsibleMapper::toDto)
+				.collect(Collectors.toCollection(LinkedList::new));
+	}
+
+	/**
+	 * Get one usmsPaymentResponsible by id.
+	 *
+	 * @param id the id of the entity
+	 * @return the entity
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public Optional<UsmsPaymentResponsibleDTO> findOne(Long id) {
+		LOGGER.debug("Request to get UsmsPaymentResponsible : {}", id);
+		return usmsPaymentResponsibleRepository.findById(id).map(usmsPaymentResponsibleMapper::toDto);
+	}
+
+	/**
+	 * Delete the usmsPaymentResponsible by id.
+	 *
+	 * @param id the id of the entity
+	 */
+	@Override
+	public void delete(Long id) {
+		LOGGER.debug("Request to delete UsmsPaymentResponsible : {}", id);
+		usmsPaymentResponsibleRepository.deleteById(id);
+		// usmsPaymentResponsibleSearchRepository.deleteById(id);
+	}
+
+	/**
+	 * Search for the usmsPaymentResponsible corresponding to the query.
+	 *
+	 * @param query the query of the search
+	 * @return the list of entities
+	 */
+	@Override
+	@Transactional(readOnly = true)
+	public List<UsmsPaymentResponsibleDTO> search(String query) {
+		LOGGER.debug("Request to search UsmsPaymentResponsibles for query {}", query);
+		// return StreamSupport
+		// .stream(usmsPaymentResponsibleSearchRepository.search(queryStringQuery(query)).spliterator(),
+		// false)
+		// .map(usmsPaymentResponsibleMapper::toDto)
+		// .collect(Collectors.toList());
+		return null;
+	}
+
+	@Override
+	public List<PaymentResponsibleHistoryModel> findAllOfCustomer(Long customerId) {
+		LOGGER.debug("Request to get all UsmsPaymentResponsibles of Customer: {}", customerId);
+		List<UsmsPaymentResponsible> list = usmsPaymentResponsibleRepository
+				.findByUsmsCustomerIdOrderBySeqAsc(customerId);
+		return ObjectMapperUtils.mapAll(list, PaymentResponsibleHistoryModel.class);
+	}
+
+	@Override
+	@Transactional(rollbackFor = { RuntimeException.class, SmartMeteringException.class })
+	public Boolean changeToTXState(Long meterId, Long dstCustId) throws SmartMeteringException {
+		LOGGER.info("Entered::changeToTXState::" + meterId);
+		Boolean isStateChanged = false;
+		Boolean hasDebt = false;
+		try {
+			LOGGER.debug("dstPaymentResponsibleId in properties is: {}", dstPaymentResponsibleId);
+			Optional<UsmsPaymentResponsible> usmsPaymentResponsible = usmsPaymentResponsibleRepository
+					.findById(dstPaymentResponsibleId);
+			LOGGER.debug("dst payment responsible is: {}", usmsPaymentResponsible);
+			if (!usmsPaymentResponsible.isPresent()) {
+				LOGGER.error("usmsPaymentResponsibleDst not present for meter::" + meterId);
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND,
+						new Object[] { "usmsPaymentResponsibleDst not present for meter::" + meterId });
+			}
+
+			Optional<UsmsContract> usmsContract = usmsContractRepository
+					.findByStatusAndUsmsMeter_Id(ContractStatus.ACTIVE, meterId);
+			if (!usmsContract.isPresent()) {
+				LOGGER.error("usmsContract not present for meter::" + meterId);
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND,
+						new Object[] { "usmsContract not present for meter::" + meterId });
+			}
+
+			UsmsMeter activeMeter = null;
+			String customerType = null;
+
+			// check if debt is present
+			UsmsMeter usmsMeter = usmsContract.get().getUsmsMeter();
+			if (usmsMeter.getStatus().equals(MeterStatus.ACTIVE)) {
+				activeMeter = usmsMeter;
+				SmartMeterRequest request = new SmartMeterRequestImpl();
+				request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, usmsMeter.getMsisdn());
+				commandExecutorService.execute(CommandMainTask.GET_BALANCE_AND_DATE, request);
+
+				CommandSubTask gbadcommand = CommandSubTask.GET_BALANCE_AND_DATE;
+				Command gbad = request.getExecutedCommand(gbadcommand);
+
+				CommandResponse gbadResponse = CommandUtil.getCommandSuccessResponse(gbad, gbadcommand.name(),
+						String.valueOf(usmsMeter.getMsisdn()));
+				LOGGER.info("changeToTXState::GBAD response::{}", gbadResponse);
+
+				Long packageId = (Long) CommandUtil.getPackageIdFromMeter(usmsMeter);
+				String debtMethod = null;
+				UsmsPackageCode usmsPackageCode = (UsmsPackageCode) CacheProvider
+						.getValueFromCache(USMSConstants.PACKAGE_PREFIX + packageId, LOGGER);
+				Optional<UsmsContract> contOpt = usmsMeter.getUsmsContracts().stream()
+						.filter(contract -> ContractStatus.ACTIVE == contract.getStatus()).findFirst();
+				if (contOpt.isPresent() && !CollectionUtils.isEmpty(contOpt.get().getUsmsContractDebts())) {
+					Optional<UsmsContractDebt> debtOpt = contOpt.get().getUsmsContractDebts().stream()
+							.filter(debt -> debt.getIsValid()).findFirst();
+					if (debtOpt.isPresent())
+						debtMethod = debtOpt.get().getDebtClearingMethod().name();
+				}
+				customerType = usmsPackageCode.getCustomerType();
+				hasDebt = CommandUtil.isDebtExists(gbadResponse, packageId, debtMethod, customerType,
+						usmsMeter.getMeterType());
+			}
+			if (!hasDebt) {
+
+				CuculusRequestImpl request = new CuculusRequestImpl();
+				if (StringUtils.hasText(usmsMeter.getMeterNumberPrefix()))
+					request.setMeterNumber(
+							usmsMeter.getMeterNumber().substring(usmsMeter.getMeterNumberPrefix().length()));
+				else
+					request.setMeterNumber(usmsMeter.getMeterNumber());
+
+				request.setMeteringPoint(usmsMeter.getMeteringPoint());
+				request.putAuxiliaryRequestParameter(AuxRequestParam.CUCULUS_METER_STATE, USMSConstants.INACTIVE);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.MSISDN, usmsMeter.getMsisdn());
+				request.putAuxiliaryRequestParameter(AuxRequestParam.METER_ID, usmsMeter.getId());
+				request.putAuxiliaryRequestParameter(AuxRequestParam.METER_TYPE, usmsMeter.getMeterType());
+				request.putAuxiliaryRequestParameter(AuxRequestParam.TEMPORARY_BLOCKED_FLAG, true);
+				request.putAuxiliaryRequestParameter(AuxRequestParam.USE_CASE,
+						MainTaskUseCase.CHANGE_TO_TRANSFER_STATE);
+				commandExecutorService.execute(CommandMainTask.CHANGE_TO_TANSFER_STATE, request);
+
+				if (!request.isRequestExecutedSuccessfully())
+					throw new SmartMeteringException(ErrorMessage.CUCULUS_FAILURE_RESPONSE,
+							"failed to connect to meter");
+
+				commandExecutorService.execute(CommandMainTask.UPDATE_TEMPORARY_BLOCKED, request);
+
+				usmsMeterRepository.changeMeterStatus(meterId, MeterStatus.INTRANSFER, MeterStatus.ACTIVE);
+
+				// update payment responsible Table
+				UsmsPaymentResponsible usmsPaymentResponsibleOld = usmsContract.get().getPaymentResponsible();
+				usmsPaymentResponsibleOld.setDeactivationDate(instantUtil.now());
+				usmsPaymentResponsibleOld.setIsDeleted(true);
+				usmsPaymentResponsibleRepository.save(usmsPaymentResponsibleOld);
+				LOGGER.info("update payment responsible entry is ::" + usmsPaymentResponsibleOld);
+				// update contract with new payment responsible
+				usmsContract.get().setPaymentResponsible(usmsPaymentResponsible.get());
+				usmsContract.get().setStatus(ContractStatus.INTRANSFER);
+				usmsContractRepository.save(usmsContract.get());
+
+				LOGGER.info("update contract entry is :: {}", usmsContract.get());
+				isStateChanged = true;
+			} else {
+				getExceptionOnDebt(customerType, activeMeter.getMeterType());
+			}
+
+			if (isStateChanged && activeMeter != null) { // send notification if successful.
+				UsmsCustomer cust = usmsContract.get().getUsmsCustomer();
+				LanguageEnum custLanguage = cust.getUsmsInstallationAddress().getLanguage();
+				String message = messageSourceUtil.getMessage("change.transfer.state", custLanguage,
+						new Object[] { activeMeter.getMeterType(), activeMeter.getMeterNumber() });
+				sendNotification(cust.getUsmsInstallationAddress().getSmsNo(), message);
+			}
+		} catch (SmartMeteringException e) {
+			LOGGER.error("Error while performing change to transfer in SmartMeteringException::" + e.getMessage());
+			throw e;
+		} catch (Exception e) {
+			LOGGER.error("Error while performing change to transfer::" + e.getMessage());
+			throw new SmartMeteringException(ErrorMessage.UPDATE_FAILED, new Object[] { "change to transfer failed " });
+		}
+		return isStateChanged;
+	}
+
+	/**
+	 * This method would return exception based on customer type.
+	 * 
+	 * @param customerType
+	 * @throws SmartMeteringException
+	 */
+
+	/**
+	 * This method would return exception based on customer type.
+	 * 
+	 * @param customerType
+	 * @throws SmartMeteringException
+	 */
+	private void getExceptionOnDebt(String customerType, MeterType meterType) throws SmartMeteringException {
+
+		if (USMSConstants.CUSTOMER_TYPE_SPECIAL.equalsIgnoreCase(customerType)) {
+
+			LOGGER.info("Not able to unstall meter due to  :: {}", ErrorMessage.ERROR_MAIN_ACCOUNT_BALANCE_NEGATIVE);
+			throw new SmartMeteringException(ErrorMessage.ERROR_MAIN_ACCOUNT_BALANCE_NEGATIVE);
+		} else if (MeterType.WATER.equals(meterType)) {
+
+			LOGGER.info("Not able not change to transfer due to :: {}",
+					ErrorMessage.DEBT_EXISTS_OR_BALANCE_IS_NEGATIVE);
+			throw new SmartMeteringException(ErrorMessage.DEBT_EXISTS_OR_BALANCE_IS_NEGATIVE);
+		} else {
+
+			LOGGER.info("Not able not change to transfer due to :: {}", ErrorMessage.AIR_DEBT_AMOUT_NOT_ZERO);
+			throw new SmartMeteringException(ErrorMessage.AIR_DEBT_AMOUT_NOT_ZERO);
+		}
+	}
+
+	@Override
+	public void sendNotification(Long phoneNumber, String message) {
+		LOGGER.info("Entered :: UsmsPaymentResponsibleServiceImpl :: sendNotification");
+		LOGGER.debug("sending notification on payment responsible change: phoneNumber: {}, message: {}", phoneNumber,
+				message);
+
+		notificationService.sendMessageToCIS(RequestUtil.getTransactionId(), RequestUtil.getTransactionTime(), message,
+				String.valueOf(phoneNumber));
+		LOGGER.info("Exit :: UsmsPaymentResponsibleServiceImpl :: sendNotification");
+
+	}
+
+	/**
+	 * This method would save documents related to payment responsible in the
+	 * storage device.
+	 * 
+	 * @param paymentResponsibleModel
+	 * @param result
+	 * @throws IOException
+	 */
+	private void saveDocuments(PaymentResponsibleModel paymentResponsibleModel, UsmsPaymentResponsibleDTO result)
+			throws IOException {
+		LOGGER.debug("Entered :: UsmsPaymentResponsibleServiceImpl :: saveDocuments");
+
+		String folderLoc = paymentResponsibleModel.getCustomerId().toString().concat(File.separator)
+				.concat(USMSConstants.PAYMENT_RESPONSIBLES).concat(File.separator).concat(result.getId().toString());
+
+		Path path = USMSFileUtil.getFolderPath(imageFilePath, folderLoc);
+		USMSFileUtil.createDirectoryIfNotExits(path);
+		String fileName = null;
+
+		if (paymentResponsibleModel.getRentAgreementPhoto() != null) {
+			fileName = USMSConstants.RENT_AGREEMENT.concat(USMSConstants.PERIOD)
+					.concat(getFileExtension(paymentResponsibleModel.getRentAgreementPhoto().getOriginalFilename()));
+			USMSFileUtil.writeToNewFile(path, fileName, paymentResponsibleModel.getRentAgreementPhoto().getBytes());
+		}
+
+		if (paymentResponsibleModel.getIcPhoto() != null) {
+			fileName = USMSConstants.IC.concat(USMSConstants.PERIOD)
+					.concat(getFileExtension(paymentResponsibleModel.getIcPhoto().getOriginalFilename()));
+			USMSFileUtil.writeToNewFile(path, fileName, paymentResponsibleModel.getIcPhoto().getBytes());
+
+		}
+	}
+
+	/**
+	 * This method would send payment responsible documents and send notification to
+	 * the customer.
+	 * 
+	 * @param paymentResponsibleModel
+	 * @param result
+	 * @throws SmartMeteringException
+	 */
+	private void saveDocumentsAndSendNotification(PaymentResponsibleModel paymentResponsibleModel,
+			UsmsPaymentResponsibleDTO result, String messageKey) throws SmartMeteringException {
+		LOGGER.debug("Entered :: UsmsPaymentResponsibleServiceImpl :: saveDocumentsAndSendNotification");
+
+		if (result != null) {
+
+			try {
+				saveDocuments(paymentResponsibleModel, result);
+			} catch (IOException e) {
+				LOGGER.error("IOE occured while moving files: {} , {}", e.getMessage(), e);
+				throw new SmartMeteringException(ErrorMessage.NOT_FOUND,
+						new Object[] { "IO Exception failed uploading documents" });
+			}
+
+			String message = messageSourceUtil.getMessage(messageKey, result.getLanguage(),
+					new Object[] { result.getMeterNumer(), result.getMeterType(), result.getCustCode() });
+
+			this.sendNotification(result.getSmsNo(), message);
+		} else {
+			LOGGER.debug("Payment Responsible object is null");
+		}
+	}
+
+	private static String getFileExtension(String fileName) {
+		if (fileName.lastIndexOf(USMSConstants.PERIOD) != -1 && fileName.lastIndexOf(USMSConstants.PERIOD) != 0)
+			return fileName.substring(fileName.lastIndexOf(USMSConstants.PERIOD) + 1);
+		else
+			return USMSConstants.EMPTY;
+	}
+
+}
